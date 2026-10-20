@@ -105,8 +105,10 @@ def main(argv: list[str] | None = None) -> int:
         (a.out / f"{task_id}.eval.json").write_text(json.dumps(r.eval.to_dict(), indent=2))
         rows.append(r.eval.summary() | {"audit": str(audit_path.relative_to(ROOT) if audit_path.is_relative_to(ROOT) else audit_path)})
         ok &= r.eval.strict_success
-        for change in r.eval.unexpected_changes:
-            print(f"[{task_id}] unexpected: {change}")
+        for reason in r.eval.failure_reasons:
+            print(f"[{task_id}] FAIL: {reason}")
+        for warning in r.eval.warnings:
+            print(f"[{task_id}] WARNING: {warning}")
     _print_table(rows)
     return 0 if ok else 1
 

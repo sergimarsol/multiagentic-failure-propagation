@@ -45,6 +45,11 @@ def get_banking_suite() -> TaskSuite[BankingEnvironment]:
     return get_suite(BENCHMARK_VERSION, SUITE_NAME)
 
 
+def default_initial_state(task_id: str) -> State:
+    """State dict of the default (no-attack) environment for `task_id`, as `BankingEnv.load` builds it."""
+    return state_dict(get_user_task(task_id).init_environment(get_banking_suite().load_and_inject_default_environment({})))
+
+
 def get_user_task(task_id: str) -> BaseUserTask[BankingEnvironment]:
     """AgentDojo user task (prompt, ground_truth, utility) at the pinned benchmark version."""
     return get_banking_suite().get_user_task_by_id(task_id)
