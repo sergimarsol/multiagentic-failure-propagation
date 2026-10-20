@@ -1,0 +1,26 @@
+# Role -> allowed tools for the AgentDojo Banking suite.
+#
+# Every suite tool must appear in exactly one of `read_tools` / `write_tools`
+# (checked at load time). Tools not listed for a role are denied, and so are
+# tools that don't exist (deny by default).
+
+read_tools: &read_tools
+  - get_iban
+  - get_balance
+  - get_most_recent_transactions
+  - get_scheduled_transactions
+  - read_file
+  - get_user_info
+
+write_tools: &write_tools
+  - send_money
+  - schedule_transaction
+  - update_scheduled_transaction
+  - update_password
+  - update_user_info
+
+roles:
+  researcher: *read_tools   # gathers facts, never changes state
+  planner: []               # reasons over facts only, no tool access
+  executor: *write_tools    # performs the plan's actions only
+  verifier: *read_tools     # re-reads evidence to check intermediate results
