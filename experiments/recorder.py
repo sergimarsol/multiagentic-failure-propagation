@@ -74,6 +74,8 @@ class Recorder:
         self._started_steps = set()
         self._broken = False
         self.write_ms = 0.0
+        self.segment_id = None
+        self.budget = None
         for stream, key, cls in (("events", "event_id", Event),
                                  ("artifacts", "artifact_id", Artifact),
                                  ("evaluations", "evaluation_id", Evaluation)):
@@ -143,7 +145,7 @@ class Recorder:
                 del self._active[step]
 
     def emit(self, event: Event):
-        row = replace(event, event_seq=self.event_cursor + 1,
+        row = replace(event, execution_segment_id=event.execution_segment_id or self.segment_id, event_seq=self.event_cursor + 1,
                       timestamp_utc=datetime.now(timezone.utc).isoformat()).to_dict()
         identifier(row["attempt_id"])
         if row["duration_ms"] is not None and row["duration_ms"] < 0:
@@ -165,7 +167,7 @@ class Recorder:
         raise TraceError(f"unknown artifact {artifact_id}")
 
     def save_artifact(self, artifact: Artifact):
-        row = artifact.to_dict()
+        row = replace(artifact, execution_segment_id=artifact.execution_segment_id or self.segment_id).to_dict()
         identifier(row["attempt_id"])
         refs = row["input_artifact_ids"] + [row[k] for k in
                ("derived_from_artifact_id", "supersedes_artifact_id") if row[k]]
@@ -175,7 +177,7 @@ class Recorder:
         return row["artifact_id"]
 
     def save_evaluation(self, evaluation: Evaluation):
-        row = evaluation.to_dict()
+        row = replace(evaluation, execution_segment_id=evaluation.execution_segment_id or self.segment_id).to_dict()
         if row["scope"] not in {"attempt", "history", "stage"}:
             raise TraceError("unknown evaluation scope")
         if row["task_success"] is not None and type(row["task_success"]) is not bool:
@@ -190,6 +192,12 @@ class Recorder:
         """Yield a terminal payload; fill usage/results even for verification/retries."""
         if kind not in {"model", "tool"}:
             raise ValueError("call kind must be model or tool")
+        if self.budget:
+            try:
+                self.budget.admit(kind)
+            except Exception as exc:
+                self.log("budget_exhausted", attempt_id, data={"error": str(exc)})
+                raise
         fields = dict(step_id=step_id or new_id("step"), node_id=node_id,
                       node_execution_id=node_execution_id)
         self.log(f"{kind}_started", attempt_id, data=payload, **fields)
@@ -201,6 +209,8 @@ class Recorder:
             result.update(status="error", error=f"{type(exc).__name__}: {exc}")
             raise
         finally:
+            if self.budget:
+                self.budget.finish(kind, result)
             self.log(f"{kind}_finished", attempt_id, data=result,
                      duration_ms=(time.perf_counter() - start) * 1000, **fields)
 

@@ -67,3 +67,17 @@ class BankingEvaluator:
             unauthorized_attempt_ids=[e["call_id"] for e in result.unauthorized_attempted],
             unauthorized_execution_ids=[e["call_id"] for e in result.unauthorized_executed],
             evidence_ids=[e["call_id"] for e in entries], details=result.to_dict())
+
+
+def cross_attempt_adapter(task_id):
+    """Adapt A's optional helper; do not reimplement action matching in D.
+
+    Calling this factory raises ImportError on versions without A's helper.
+    Selecting an approved helper revision is the integration owner's decision.
+    """
+    from eval.scoring import cross_attempt_repeats
+
+    def evaluate_repeats(attempts):
+        results = cross_attempt_repeats(task_id, [a["audit"] for a in attempts])
+        return [{**row, "attempt_id": attempts[row["attempt_index"]]["attempt_id"]} for row in results]
+    return evaluate_repeats

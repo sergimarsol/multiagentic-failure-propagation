@@ -4,11 +4,11 @@ from env.banking_env import BankingEnv
 from experiments.banking import BankingAdapter, BankingEvaluator
 from experiments.models import Artifact
 from experiments.recorder import Recorder
-from experiments.recovery import FaultNotice, FullRestartPolicy, RecoveryCoordinator, RecoveryPointManager
-from experiments.mock import MockInjector, MockWorkflow
+from experiments.recovery import RecoveryPointManager
+from tests.d_fixtures import MockInjector, MockWorkflow
 
 
-def test_banking_snapshot_audit_mapping_and_restart(tmp_path):
+def test_banking_snapshot_restore_preserves_audit(tmp_path):
     rec = Recorder(tmp_path, {"run_id": "bank_trial", "task_id": "user_task_0", "synthetic": True})
     bank = BankingEnv().load("user_task_0")
     adapter = BankingAdapter(bank, rec)
@@ -34,11 +34,10 @@ def test_banking_snapshot_audit_mapping_and_restart(tmp_path):
         adapter.call_tool("executor", "send_money", args, attempt_id=attempt,
                          node_id="execute", node_execution_id="exec_good")
     workflow.run = clean_run
-    plan = FullRestartPolicy().plan(FaultNotice(("bad",)), attempt_id="a0", initial_point=c0,
-                                   nodes=("research", "plan", "execute"))
-    result = RecoveryCoordinator(rec, manager, workflow, injector, evaluator).apply(plan)
-    assert result["completed"] and result["task_success"]
-    history = evaluator.evaluate(result["attempt_id"], "history")
+    manager.restore(c0.checkpoint_id, "a1")
+    clean_run("a1")
+    assert evaluator.evaluate("a1", "attempt").task_success
+    history = evaluator.evaluate("a1", "history")
     assert history.task_success is False and len(history.unauthorized_execution_ids) == 1
     assert bank.audit_log()[0] == audit_before[0]
     assert bank.audit_log()[0]["run_id"] == "bank_trial:a0"

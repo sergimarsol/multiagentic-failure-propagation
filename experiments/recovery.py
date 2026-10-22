@@ -1,14 +1,14 @@
-"""Synchronous application checkpoints and bounded full restart."""
+"""Shared synchronous application checkpoints and recovery data contracts."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-from pathlib import Path
+import re
 import time
 from typing import Protocol
 
-from .models import Evaluation, RecoveryPoint, detached, fingerprint, identifier, new_id
+from .models import RecoveryPoint, detached, fingerprint, identifier, new_id
 from .recorder import Recorder, TraceError, atomic_json
 
 
@@ -28,14 +28,6 @@ class Workflow(Protocol):
     def run(self, attempt_id: str) -> None: ...
 
 
-class FaultController(Protocol):
-    def disable_once(self) -> None: ...
-
-
-class Evaluator(Protocol):
-    def evaluate(self, attempt_id: str, scope: str) -> Evaluation: ...
-
-
 class RecoveryPointManager:
     def __init__(self, recorder: Recorder, environment: Environment, workflow: Workflow):
         self.recorder, self.environment, self.workflow = recorder, environment, workflow
@@ -46,8 +38,8 @@ class RecoveryPointManager:
 
     def capture(self, attempt_id, boundary, *, injection_phase):
         self._quiescent()
-        if boundary not in {"C0", "C1", "C2", "C3"}:
-            raise ValueError("only stage boundaries C0-C3 are supported")
+        if not re.fullmatch(r"C[0-9]+", boundary):
+            raise ValueError("only completed-node boundaries C0-Cn are supported")
         if injection_phase not in {"before_injection", "after_injection", "no_injection"}:
             raise ValueError("explicit injection phase required")
         if boundary == "C0":
@@ -163,71 +155,10 @@ class FaultNotice:
 class RecoveryPlan:
     recovery_id: str
     from_attempt_id: str
-    checkpoint_id: str
+    checkpoint_id: str | None
     faulty_artifact_ids: tuple[str, ...]
     rerun_node_ids: tuple[str, ...]
     strategy: str = "full_restart"
-
-
-class FullRestartPolicy:
-    def plan(self, notice: FaultNotice, *, attempt_id, initial_point, nodes):
-        if initial_point.boundary != "C0" or not notice.faulty_artifact_ids:
-            raise ValueError("full restart requires C0 and a supplied fault identity")
-        return RecoveryPlan(new_id("recovery"), attempt_id, initial_point.checkpoint_id,
-                            notice.faulty_artifact_ids, tuple(nodes))
-
-
-class RecoveryCoordinator:
-    def __init__(self, recorder, points, workflow, fault_controller, evaluator, *, max_restarts=1):
-        if max_restarts < 1:
-            raise ValueError("max_restarts must be positive")
-        self.recorder, self.points, self.workflow = recorder, points, workflow
-        self.fault_controller, self.evaluator = fault_controller, evaluator
-        self.max_restarts = max_restarts
-
-    def apply(self, plan: RecoveryPlan):
-        events = self.recorder.records("events")
-        if sum(e["event_type"] == "recovery_started" for e in events) >= self.max_restarts:
-            raise TraceError("restart limit reached")
-        if plan.strategy != "full_restart":
-            raise ValueError("only full restart is implemented")
-        for ref in plan.faulty_artifact_ids:
-            if self.recorder.artifact(ref)["attempt_id"] != plan.from_attempt_id:
-                raise TraceError("fault belongs to a different attempt")
-        self.points._quiescent()
-        if not any(e["scope"] == "attempt" and e["attempt_id"] == plan.from_attempt_id
-                   for e in self.recorder.records("evaluations")):
-            self.recorder.save_evaluation(self.evaluator.evaluate(plan.from_attempt_id, "attempt"))
-        new_attempt = new_id("attempt")
-        started = time.perf_counter()
-        self.recorder.log("recovery_started", plan.from_attempt_id, recovery_id=plan.recovery_id,
-            data={"strategy": plan.strategy, "faulty_artifact_ids": list(plan.faulty_artifact_ids),
-                  "checkpoint_id": plan.checkpoint_id, "rerun_node_ids": list(plan.rerun_node_ids),
-                  "new_attempt_id": new_attempt})
-        completed, correct, error = False, None, None
-        try:
-            point, _, execution = self.points.load(plan.checkpoint_id)
-            if point.boundary != "C0" or tuple(execution["pending_nodes"]) != plan.rerun_node_ids:
-                raise TraceError("plan must rerun the complete initial workflow")
-            self.points.restore(plan.checkpoint_id, new_attempt)
-            self.fault_controller.disable_once()
-            self.recorder.log("fault_disabled", new_attempt, recovery_id=plan.recovery_id)
-            self.recorder.log("attempt_started", new_attempt,
-                              data={"restored_from_checkpoint_id": plan.checkpoint_id})
-            self.workflow.run(new_attempt)
-            evaluation = self.evaluator.evaluate(new_attempt, "attempt")
-            self.recorder.save_evaluation(evaluation)
-            correct = evaluation.task_success
-            completed = True
-        except Exception as exc:
-            error = f"{type(exc).__name__}: {exc}"
-        self.recorder.log("recovery_finished", new_attempt, recovery_id=plan.recovery_id,
-            duration_ms=(time.perf_counter() - started) * 1000,
-            data={"completed": completed, "task_success": correct, "error": error})
-        # A failed restore may have left partial state. Never silently call it successful.
-        try:
-            self.recorder.save_evaluation(self.evaluator.evaluate(new_attempt, "history"))
-        except Exception as exc:
-            self.recorder.log("evaluation_failed", new_attempt, data={"scope": "history", "error": str(exc)})
-        return {"attempt_id": new_attempt, "completed": completed,
-                "task_success": correct, "error": error}
+    reuse_artifact_ids: tuple[str, ...] = ()
+    state_action: str = "restore_checkpoint"
+    fallback_policy: str = "full_restart"

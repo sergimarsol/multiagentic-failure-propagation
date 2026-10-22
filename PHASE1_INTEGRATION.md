@@ -144,7 +144,7 @@ intermediate boundary and its response to rejection. Use the same injection sche
 model configuration and resource budget as the other conditions. This infrastructure
 records the calls but supplies no working verification defense.
 
-See [capability status](docs/PHASE1_CAPABILITIES.md) for what is actually verified.
+See [capability status](docs/CAPABILITIES.md) for what is actually verified.
 See [optional advanced features](docs/ADVANCED_RECOVERY.md) for Phase 2 preparation.
 
 ## Scoring fields and cross-attempt repeats
@@ -167,3 +167,11 @@ list. Helper errors are recorded separately. This hook has fixture tests only.
 Repeated actions across attempts are distinct from within-attempt violations.
 Their persistence or irreversibility needs an explicit environment/effect policy;
 repeat detection alone does not establish that simulated effects survived a reset.
+
+## Additive D extensions
+
+Existing calls remain supported. `run_phase1` additionally accepts optional
+`experiment_config` and `limits`; `clean_verify` disables faults while enabling B's
+verification path. Segments are allocated by D. No new A/B/C method is mandatory.
+See [EXPERIMENT_PROTOCOL.md](docs/EXPERIMENT_PROTOCOL.md) for batch execution, budget
+limitations and the separately enabled Phase 2 adapter. Phase 1 needs no checkpoints.

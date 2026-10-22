@@ -6,12 +6,11 @@ import json
 import pytest
 
 from experiments.metrics import summarize_run
-from experiments.mock import (MockEnvironment, MockEvaluator, MockInjector, MockWorkflow,
+from tests.d_fixtures import (MockEnvironment, MockEvaluator, MockInjector, MockWorkflow,
                               NODES, run_mock)
 from experiments.models import Artifact, Evaluation, Event, new_id
 from experiments.recorder import DependencyStore, Recorder, TraceError, read_jsonl
-from experiments.recovery import (FaultNotice, FullRestartPolicy, RecoveryCoordinator,
-                                  RecoveryPointManager)
+from experiments.recovery import RecoveryPointManager
 
 
 def setup(tmp_path, scenario="restart"):
@@ -56,7 +55,7 @@ def test_restart_preserves_history_and_cost(tmp_path, site):
     events, _ = read_jsonl(tmp_path / "events.jsonl")
     assert sum(e["event_type"] == "fault_injected" and e["data"]["triggered"] for e in events) == 1
     assert len({e["node_execution_id"] for e in events if e["event_type"] == "node_started"}) == 6
-    assert sum(e["event_type"] == "checkpoint_created" for e in events) == 7
+    assert not any(e["event_type"] == "checkpoint_created" for e in events)
     initial_end = next(i for i, e in enumerate(events) if e["event_type"] == "recovery_started")
     for e in events[initial_end:]:
         if e["event_type"] == "model_started":
@@ -72,19 +71,6 @@ def test_usage_failed_verifier_and_retry_are_counted_once(tmp_path):
     assert c["output_tokens"] is None and c["known_output_tokens"] == 10
     assert c["calls_missing_usage"] == 4
     assert c["usage_complete"] is False
-
-
-@pytest.mark.parametrize("scenario", ["restore_failure", "incompatible"])
-def test_restore_failure_stops_reexecution(tmp_path, scenario):
-    s = run_mock(tmp_path, scenario)
-    assert s["recovery_completed"] is False
-    assert s["recovery_task_success"] is None
-    assert s["final_task_success"] is None
-    assert s["total_cost"]["model_calls"] == 3
-    assert s["unauthorized_executions"] == 1
-    events, _ = read_jsonl(tmp_path / "events.jsonl")
-    end = next(e for e in events if e["event_type"] == "recovery_finished")
-    assert end["data"]["error"]
 
 
 def test_checkpoint_detaches_restores_context_and_cache(tmp_path):
@@ -208,27 +194,6 @@ def test_incomplete_call_counts_usage_and_blocks_snapshot(tmp_path):
     assert s["total_cost"]["model_calls"] == 1
     assert s["total_cost"]["incomplete_calls"] == 1
     assert s["total_cost"]["input_tokens"] is None
-
-
-def test_restart_limit_and_rerun_correctness_separate(tmp_path):
-    r, env, inj, w, p = setup(tmp_path)
-    cp = p.capture("a0", "C0", injection_phase="before_injection")
-    r.log("attempt_started", "a0")
-    w.run("a0")
-    evaluator = MockEvaluator(r, env)
-    policy = FullRestartPolicy()
-    plan = policy.plan(FaultNotice((inj.faulty_id,)), attempt_id="a0", initial_point=cp, nodes=NODES)
-    coordinator = RecoveryCoordinator(r, p, w, inj, evaluator)
-    # Run completes but the task remains wrong: completion is NOT correctness.
-    original = w.run
-    def wrong(attempt):
-        original(attempt)
-        env.state["payments"] = []
-    w.run = wrong
-    result = coordinator.apply(plan)
-    assert result["completed"] is True and result["task_success"] is False
-    with pytest.raises(TraceError, match="limit"):
-        coordinator.apply(plan)
 
 
 def test_summary_deterministic_and_no_cost_double_count(tmp_path):

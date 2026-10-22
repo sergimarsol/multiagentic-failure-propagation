@@ -1,17 +1,18 @@
-"""Synthetic fixtures for infrastructure tests, NOT AgentDojo/model findings."""
+"""Test-only fixtures; recovery is delegated to the production Phase 1 runner."""
 
 from __future__ import annotations
 
 import json
 import time
 
-from .models import Artifact, Evaluation, detached, fingerprint, new_id
-from .recorder import DependencyStore, Recorder
-from .recovery import FaultNotice, FullRestartPolicy, RecoveryCoordinator, RecoveryPointManager
-from .metrics import summarize_run
+from experiments.models import Artifact, Evaluation, detached, fingerprint, new_id
+from experiments.recorder import DependencyStore, Recorder
+from experiments.recovery import RecoveryPointManager
+from experiments.phase1 import run_phase1
+from experiments.metrics import summarize_run
 
 SCENARIOS = ("clean", "untriggered", "ignored", "rejected", "executed", "restart",
-             "restore_failure", "incompatible", "usage_retry")
+             "usage_retry")
 NODES = ("research", "plan", "execute")
 
 
@@ -55,9 +56,6 @@ class MockInjector:
         self.enabled = scenario not in {"clean", "usage_retry"}
         self.triggered = False
         self.faulty_id = None
-
-    def disable_once(self):
-        self.enabled = False
 
     def replace(self, original, attempt_id, node_id):
         if not self.enabled or self.triggered or node_id != self.site:
@@ -215,6 +213,8 @@ class MockEvaluator:
 def run_mock(directory, scenario="restart", *, run_id=None, site="research"):
     if scenario not in SCENARIOS or site not in {"research", "plan"}:
         raise ValueError("unknown fixture scenario/site")
+    if scenario == "restart":
+        return _run_factory_restart(directory, site)
     start = time.perf_counter()
     recorder = Recorder(directory, {"run_id": run_id or new_id("run"), "synthetic": True,
         "task_id": "mock_bill", "condition": scenario, "injection_site": site,
@@ -236,20 +236,40 @@ def run_mock(directory, scenario="restart", *, run_id=None, site="research"):
         recorder.log("fault_injected", attempt, data={"triggered": False, "scheduled": injector.enabled})
         recorder.log("fault_exposure", attempt, data={"delivered": False})
     recorder.save_evaluation(evaluator.evaluate(attempt, "attempt"))
-    if scenario in {"restart", "restore_failure", "incompatible"}:
-        recorder.log("fault_notified", attempt, data={"faulty_artifact_ids": [injector.faulty_id], "source": "injection_oracle"})
-        if scenario == "restore_failure":
-            env.fail_restore = True
-        if scenario == "incompatible":
-            path = recorder.directory / "checkpoints" / c0.checkpoint_id / "checkpoint.json"
-            damaged = json.loads(path.read_text())
-            damaged["manifest_fingerprint"] = "synthetic-incompatible-config"
-            path.write_text(json.dumps(damaged))
-        plan = FullRestartPolicy().plan(FaultNotice((injector.faulty_id,)), attempt_id=attempt,
-                                       initial_point=c0, nodes=NODES)
-        RecoveryCoordinator(recorder, points, workflow, injector, evaluator).apply(plan)
-    else:
-        recorder.save_evaluation(evaluator.evaluate(attempt, "history"))
+    recorder.save_evaluation(evaluator.evaluate(attempt, "history"))
     recorder.log("run_finished", attempt, duration_ms=(time.perf_counter() - start) * 1000,
                  data={"recording_overhead_ms": recorder.write_ms})
     return summarize_run(directory)
+
+
+def _run_factory_restart(directory, site):
+    """Exercise the production Phase 1 runner; this fixture owns no recovery loop."""
+    class Adapter:
+        def create_initial_environment(self, task_id):
+            self.environment = MockEnvironment()
+            return self.environment
+
+        def read_state(self, env):
+            return env.snapshot()
+
+        def trace(self, env):
+            return detached(env.audit)
+
+        def evaluate_execution(self, initial, final, trace):
+            ev = MockEvaluator(self.recorder, self.environment).evaluate(self.attempt, "attempt")
+            return {key: getattr(ev, key) for key in
+                    ("task_success", "unauthorized_attempt_ids", "unauthorized_execution_ids",
+                     "propagation", "work_validity", "details")}
+
+    adapter = Adapter()
+    class Session:
+        def run(self, env, cb, injector, *, injection_enabled, always_verify):
+            adapter.recorder, adapter.attempt = cb.recorder, cb.attempt_id
+            fault = MockInjector(cb.recorder, "restart" if injection_enabled else "clean", site)
+            workflow = MockWorkflow(cb.recorder, env, fault, "restart")
+            workflow.run(cb.attempt_id)
+            if fault.faulty_id:
+                cb.faulty_artifact_ids.append(fault.faulty_id)
+
+    return run_phase1(directory, task_id="mock_bill", condition="full_restart",
+                      environment_adapter=adapter, create_session=Session, synthetic=True)
