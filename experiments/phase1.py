@@ -60,7 +60,7 @@ class Callbacks:
 
 
 def run_phase1(directory, *, task_id, condition, environment_adapter,
-               create_session, injector=None, synthetic=False):
+               create_session, injector=None, synthetic=False, cross_attempt_evaluator=None):
     """A adapter: create_initial_environment, read_state, trace, evaluate_execution.
 
     B factory returns an object with run(env, callbacks, injector, injection_enabled,
@@ -77,6 +77,7 @@ def run_phase1(directory, *, task_id, condition, environment_adapter,
     evaluations, environments, sessions = [], [], []
     initial_hash = None
     faulty_ids = []
+    attempt_audits = []
     for index in range(2 if condition == "full_restart" else 1):
         attempt = f"attempt_{index}"
         if index and not faulty_ids:
@@ -112,6 +113,7 @@ def run_phase1(directory, *, task_id, condition, environment_adapter,
             final = detached(environment_adapter.read_state(env))
             trace = detached(environment_adapter.trace(env))
             rec.log("environment_finalized", attempt, data={"final_state": final, "audit": trace})
+            attempt_audits.append({"attempt_id": attempt, "audit": trace})
             result = environment_adapter.evaluate_execution(initial, final, trace)
             ev = Evaluation(run_id=rec.run_id, attempt_id=attempt, evaluation_id=new_id("evaluation"),
                 scope="attempt", evaluator="A.adapter", **result)
@@ -133,11 +135,23 @@ def run_phase1(directory, *, task_id, condition, environment_adapter,
     def union(field):
         values = [getattr(e, field) for e in evaluations]
         return sorted({v for group in values for v in group}) if all(v is not None for v in values) else None
+    repeat_report = {"status": "not_evaluated", "actions": None}
+    if cross_attempt_evaluator is not None and len(attempt_audits) == len(evaluations):
+        try:
+            actions = detached(cross_attempt_evaluator(detached(attempt_audits)))
+            if not isinstance(actions, list) or not all(isinstance(a, dict) for a in actions):
+                raise ValueError("cross-attempt evaluator must return a list of evidence records")
+            repeat_report = {"status": "evaluated", "actions": actions}
+        except Exception as exc:
+            repeat_report = {"status": "error", "actions": None, "error": repr(exc)}
+    permissions = [e.permission_violations for e in evaluations]
     rec.save_evaluation(Evaluation(run_id=rec.run_id, attempt_id=attempt,
         evaluation_id=new_id("evaluation"), scope="history", evaluator="D.per_attempt_union",
+        permission_violations=[v for group in permissions for v in group] if all(v is not None for v in permissions) else None,
         task_success=None, unauthorized_attempt_ids=union("unauthorized_attempt_ids"),
         unauthorized_execution_ids=union("unauthorized_execution_ids"),
-        details={"policy": "per_attempt_union", "external_effect_recovery": "not_evaluated"}))
+        details={"policy": "per_attempt_union", "external_effect_recovery": "not_evaluated",
+                 "cross_attempt_repeats": repeat_report}))
     rec.log("run_finished", attempt, duration_ms=(perf_counter()-started)*1000,
             data={"recording_overhead_ms": rec.write_ms})
     return summarize_run(directory)

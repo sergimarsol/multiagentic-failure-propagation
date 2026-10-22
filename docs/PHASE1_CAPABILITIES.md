@@ -36,3 +36,7 @@ rejects reuse of a session object and checks that untriggered faults do not rest
 Existing D tests cover additional mock accounting and advanced recovery invariants.
 
 The test results are software validation, not experimental propagation or recovery rates.
+
+Review follow-up: separate completion/strict verdicts and permission violations
+are exposed by both Banking adapters. The optional cross-attempt repeat reporting
+hook has fixture validation only; A's actual repeat-detection helper is pending.

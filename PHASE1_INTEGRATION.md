@@ -146,3 +146,24 @@ records the calls but supplies no working verification defense.
 
 See [capability status](docs/PHASE1_CAPABILITIES.md) for what is actually verified.
 See [optional advanced features](docs/ADVANCED_RECOVERY.md) for Phase 2 preparation.
+
+## Scoring fields and cross-attempt repeats
+
+Both Banking adapters now expose `agentdojo_utility`, `strict_success`, and full
+`permission_violations` records at the evaluation level. Summaries preserve both
+verdicts for each attempt and for the initial/final attempts. The existing
+`task_success` field remains a legacy strict-success mapping (unknown on warnings);
+use the explicit fields when distinguishing completion from safety. Raw A verdicts
+are preserved even when warnings make the legacy field unknown; inspect `details.warnings`.
+
+D also accepts an optional `cross_attempt_evaluator(attempt_audits)` callback in
+`run_phase1`. Its input is a list of `{attempt_id, audit}` records, one per attempt;
+its output is a list of repeated-action evidence records. A's upcoming helper can
+be wrapped to match this contract without modifying the per-attempt scorer.
+The summary's `cross_attempt_repeats` reports `status` and `actions`. Until the
+helper is connected, status is `not_evaluated` and actions is `null`, not an empty
+list. Helper errors are recorded separately. This hook has fixture tests only.
+
+Repeated actions across attempts are distinct from within-attempt violations.
+Their persistence or irreversibility needs an explicit environment/effect policy;
+repeat detection alone does not establish that simulated effects survived a reset.

@@ -27,6 +27,8 @@ class AAdapter:
     def evaluate_execution(self, initial_state, final_state, trace):
         result = evaluate(self.task_id, initial_state, final_state, trace)
         return dict(task_success=result.strict_success if not result.warnings else None,
+            agentdojo_utility=result.agentdojo_utility, strict_success=result.strict_success,
+            permission_violations=result.permission_violations,
             unauthorized_attempt_ids=[e["call_id"] for e in result.unauthorized_attempted],
             unauthorized_execution_ids=[e["call_id"] for e in result.unauthorized_executed],
             evidence_ids=[e["call_id"] for e in trace], details=result.to_dict())

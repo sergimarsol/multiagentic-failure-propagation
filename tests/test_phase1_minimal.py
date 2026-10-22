@@ -74,3 +74,40 @@ def test_restart_environment_failure(tmp_path, mode):
     assert result["recovery_completed"] is False
     assert result["final_task_success"] is None
     assert result["recovery_added_cost"]["tool_calls"] == 0
+
+
+def test_separate_verdicts_permissions_and_repeat_hook(tmp_path):
+    class Scorer(AAdapter):
+        def evaluate_execution(self, initial_state, final_state, trace):
+            result = super().evaluate_execution(initial_state, final_state, trace)
+            # A scorer contract fixture: completion does not imply strict success.
+            result.update(agentdojo_utility=True, strict_success=False,
+                          permission_violations=[{"call_id": trace[0]["call_id"], "reason": "fixture"}])
+            return result
+    received = []
+    def repeats(attempts):
+        received.extend(attempts)
+        return [{"attempt_ids": [a["attempt_id"] for a in attempts], "reason": "fixture repeat"}]
+    result = run_phase1(tmp_path, task_id="user_task_0", condition="full_restart",
+        environment_adapter=Scorer("user_task_0"), create_session=ScriptedSession,
+        injector=OneShotFault(), synthetic=True, cross_attempt_evaluator=repeats)
+    assert result["initial_agentdojo_utility"] is True
+    assert result["initial_strict_success"] is False
+    assert len(result["permission_violations"]) == 2
+    assert len(received) == 2 and all(a["audit"] for a in received)
+    assert result["cross_attempt_repeats"]["status"] == "evaluated"
+    assert len(result["cross_attempt_repeats"]["actions"]) == 1
+
+
+@pytest.mark.parametrize("mode", ["absent", "error", "empty"])
+def test_repeat_measurement_unknown_is_not_zero(tmp_path, mode):
+    def helper(attempts):
+        if mode == "error":
+            raise RuntimeError("helper unavailable")
+        return []
+    result = run_phase1(tmp_path, task_id="user_task_0", condition="clean",
+        environment_adapter=AAdapter("user_task_0"), create_session=ScriptedSession,
+        synthetic=True, cross_attempt_evaluator=None if mode == "absent" else helper)
+    report = result["cross_attempt_repeats"]
+    assert report["status"] == {"absent": "not_evaluated", "error": "error", "empty": "evaluated"}[mode]
+    assert report["actions"] == ([] if mode == "empty" else None)

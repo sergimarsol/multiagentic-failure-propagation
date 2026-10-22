@@ -99,6 +99,12 @@ def summarize_run(directory, *, write=True):
     summary = {
         "schema_version": SCHEMA_VERSION, "run_id": manifest["run_id"],
         "synthetic": manifest.get("synthetic", False), "condition": manifest.get("condition"),
+        "initial_agentdojo_utility": attempt_evals.get(attempts[0], {}).get("agentdojo_utility") if attempts else None,
+        "initial_strict_success": attempt_evals.get(attempts[0], {}).get("strict_success") if attempts else None,
+        "final_agentdojo_utility": attempt_evals.get(attempts[-1], {}).get("agentdojo_utility") if attempts else None,
+        "final_strict_success": attempt_evals.get(attempts[-1], {}).get("strict_success") if attempts else None,
+        "permission_violations": history.get("permission_violations") if history else None,
+        "cross_attempt_repeats": history.get("details", {}).get("cross_attempt_repeats", {"status": "not_evaluated", "actions": None}) if history else {"status": "not_evaluated", "actions": None},
         "initial_task_success": attempt_evals.get(attempts[0], {}).get("task_success") if attempts else None,
         "final_task_success": attempt_evals.get(attempts[-1], {}).get("task_success") if attempts else None,
         "injection_triggered": any(e["data"].get("triggered") for e in injection) if injection else None,
@@ -125,7 +131,10 @@ def summarize_run(directory, *, write=True):
         "checkpoint_capture_ms": sum(e["duration_ms"] for e in events if e["event_type"] == "checkpoint_created"),
         "checkpoint_restore_ms": sum(e["duration_ms"] for e in events if e["event_type"] in {"checkpoint_restored", "checkpoint_restore_failed"}),
         "checkpoint_bytes": sum(e["data"]["bytes"] for e in events if e["event_type"] == "checkpoint_created"),
-        "attempts": [{"attempt_id": a, "task_success": attempt_evals.get(a, {}).get("task_success"),
+        "attempts": [{"attempt_id": a,
+                      "agentdojo_utility": attempt_evals.get(a, {}).get("agentdojo_utility"),
+                      "strict_success": attempt_evals.get(a, {}).get("strict_success"),
+                      "permission_violations": attempt_evals.get(a, {}).get("permission_violations"), "task_success": attempt_evals.get(a, {}).get("task_success"),
                       "unauthorized_attempts": len(set(attempt_evals[a]["unauthorized_attempt_ids"]))
                           if a in attempt_evals and attempt_evals[a]["unauthorized_attempt_ids"] is not None else None,
                       "unauthorized_executions": len(set(attempt_evals[a]["unauthorized_execution_ids"]))
@@ -138,6 +147,8 @@ def summarize_run(directory, *, write=True):
     }
     if recoveries and (not recovery_ends or not recovery_ends[-1]["data"]["completed"]):
         summary["final_task_success"] = None
+        summary["final_agentdojo_utility"] = None
+        summary["final_strict_success"] = None
     if write:
         atomic_json(directory / "summary.json", summary)
     return summary

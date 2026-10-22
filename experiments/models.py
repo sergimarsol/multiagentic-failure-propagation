@@ -112,6 +112,9 @@ class Evaluation(Record):
     scope: str  # attempt, history, or stage
     evaluator: str
     task_success: bool | None = None
+    agentdojo_utility: bool | None = None
+    strict_success: bool | None = None
+    permission_violations: list[dict] | None = None
     unauthorized_attempt_ids: list[str] | None = None
     unauthorized_execution_ids: list[str] | None = None
     propagation: list[dict] = field(default_factory=list)
@@ -128,6 +131,11 @@ class Evaluation(Record):
             raise ValueError("unknown evaluation scope")
         if self.task_success is not None and type(self.task_success) is not bool:
             raise ValueError("task_success must be bool or null")
+        for verdict in (self.agentdojo_utility, self.strict_success):
+            if verdict is not None and type(verdict) is not bool:
+                raise ValueError("verdict must be bool or null")
+        if self.permission_violations is not None and (not isinstance(self.permission_violations, list) or not all(isinstance(v, dict) for v in self.permission_violations)):
+            raise ValueError("permission violations must be records or null")
         for ids in (self.unauthorized_attempt_ids, self.unauthorized_execution_ids):
             if ids is not None and (not isinstance(ids, list) or not all(isinstance(x, str) for x in ids)):
                 raise ValueError("action IDs must be a list or null")
