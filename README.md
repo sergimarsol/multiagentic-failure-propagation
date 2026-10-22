@@ -29,6 +29,7 @@ Choose the document for your task:
 | Connect A/B/C for Phase 1 | [Minimum integration contract](PHASE1_INTEGRATION.md) |
 | Understand modules, experiments and recovery | [Shared experiment protocol](docs/EXPERIMENT_PROTOCOL.md) |
 | Check implementation and validation status | [Capability status](docs/CAPABILITIES.md) |
+| Run automated checks and understand merge protection | [CI guide](docs/CI.md) |
 
 Phase 1 full restart creates a new environment and new agent sessions; it requires
 no stage checkpoints. Phase 2 recovery is an explicit, optional advanced path.

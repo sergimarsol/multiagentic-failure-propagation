@@ -1,0 +1,60 @@
+name: Python CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Python tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      UV_PYTHON: "3.11.9"
+      PYTHONDONTWRITEBYTECODE: "1"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install uv and select Python
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff # v6
+        with:
+          version: "0.11.26"
+          python-version: "3.11.9"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Install locked dependencies
+        run: uv sync --locked --group dev
+      - name: Run all tests
+        run: uv run --no-sync python -m pytest -q -p no:cacheprovider
+      - name: Run Phase 1 and Phase 2 scripted smoke checks
+        run: |
+          uv run --no-sync python scripts/run_experiment_batch.py --config configs/d_phase1_smoke.json --output runs/ci-phase1
+          uv run --no-sync python scripts/run_phase2_batch.py --config configs/d_phase2_smoke.json --output runs/ci-phase2
+      - name: Validate smoke outputs
+        run: |
+          uv run --no-sync python - <<'PY'
+          import json
+          from pathlib import Path
+          for phase, expected in (("phase1", 5), ("phase2", 3)):
+              root = Path("runs") / ("ci-" + phase)
+              results = [json.loads(p.read_text()) for p in root.glob("result_*.json")]
+              assert len(results) == expected, (phase, len(results))
+              for result in results:
+                  assert result["error"] is None, result["error"]
+                  assert result["summary"]["synthetic"] is True
+                  assert result["summary"]["trace_complete"] is True
+              assert (root / "runs.csv").is_file()
+              assert (root / "condition_summary.csv").is_file()
+          PY
