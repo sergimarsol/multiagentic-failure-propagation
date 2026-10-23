@@ -102,3 +102,41 @@ The regression suite supplies those errors and covers partial writes, context cl
 same-point retries, older-point restores, exhausted limits, unsafe effects, shared
 budgets, and default compatibility. Validation remains **mock-only**, not real Banking
 agent recovery.
+
+## Optional Banking segment audit adapter
+
+`BankingAdapter(env, recorder, segmented_audit=True)` enables Phase 2 audit
+segmentation. The default remains `False`: existing Phase 1 callers and audit
+keys are unchanged. Construct the segmented adapter on a fresh audit log.
+
+Each tool audit uses `run_id:attempt_id:execution_segment_id`. Checkpoint restore
+starts a fresh segment even when called outside the recovery coordinator. The
+coordinator can subsequently assign its own segment ID before execution begins.
+The raw audit and recorder history are never truncated.
+
+The application snapshot includes `_d_audit_path`, the ordered call IDs on the
+current effective execution path. RecoveryPointManager saves and checksums this
+metadata together with the environment. Restoring a point restores that path,
+so retained calls before the point remain included and abandoned branch calls
+are excluded. This metadata is a conservative extra snapshot resource, not a
+Banking business field; node adapters must account for it when declaring complete
+snapshot resource dependencies. Old snapshots without this metadata are rejected
+in segmented mode; they must not silently imply an empty effective history.
+
+`BankingEvaluator.evaluate(attempt_id, "attempt")` selects the effective path in
+segmented mode. `evaluate(attempt_id, "history")` preserves all historical calls;
+`evaluate(attempt_id, "attempt", audit_view="history")` selects the entire history
+of that attempt. Both views delegate classification to A. For scoring only, D
+normalizes copied audit run IDs to the attempt ID so retained and rerun calls
+within one attempt are not misclassified as cross-attempt repeats. Original
+segment audit keys remain in the raw log and evaluation `audit_source_keys`.
+
+A path is a list of call IDs, not simply the latest segment: a valid prefix may
+span several segments. Effective success does not erase historical violations,
+cost, or irreversible effects. This adapter supports A's simulated, restorable
+Banking state only; it does not compensate real payments or authorize restoring
+unknown external effects. The coordinator's effect-safety checks still apply.
+
+Validation: regression tests use the real A Banking simulator/scorer with
+scripted tool calls and a shared checkpoint manager. Full integration with B's
+real-model Phase 2 workflow is still pending. No A scoring rules are changed.

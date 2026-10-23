@@ -57,3 +57,67 @@ def test_banking_denied_tool_and_read_dependencies(tmp_path):
     assert ends[0]["allowed"] is False and ends[0]["invoked"] is False
     assert ends[0]["state_changed"] is False
     assert ends[1]["state_reads"] and ends[1]["state_writes"] == []
+
+
+def segmented_bank(tmp_path):
+    from env.tasks import get_task_config
+    rec = Recorder(tmp_path, {"run_id": "segmented", "synthetic": True})
+    bank = BankingEnv().load("user_task_0")
+    adapter = BankingAdapter(bank, rec, segmented_audit=True)
+    args = dict(next(c for c in get_task_config("user_task_0").ground_truth(bank.env)
+                     if c.function == "send_money").args)
+    def pay(**overrides):
+        return adapter.call_tool("executor", "send_money", {**args, **overrides},
+            attempt_id="a0", node_id="execute", node_execution_id="execution")
+    return rec, bank, adapter, BankingEvaluator(adapter), pay
+
+
+def test_segment_restore_excludes_undone_calls_but_keeps_history(tmp_path):
+    rec, bank, adapter, evaluator, pay = segmented_bank(tmp_path)
+    initial = adapter.snapshot()
+    wrong = pay(amount=1337.42)
+    first_key = bank.audit_log()[0]["run_id"]
+    adapter.restore(initial)
+    correct = pay()
+    assert bank.audit_log()[-1]["run_id"] != first_key
+    effective = evaluator.evaluate("a0", "attempt")
+    assert effective.strict_success is True
+    assert effective.evidence_ids == [correct.call_id]
+    history = evaluator.evaluate("a0", "history")
+    assert wrong.call_id in history.unauthorized_execution_ids
+    assert len(bank.audit_log()) == 2
+    assert len([e for e in rec.records("events") if e["event_type"] == "tool_finished"]) == 2
+    assert evaluator.evaluate("a0", "attempt", audit_view="history").strict_success is False
+
+
+def test_segment_restore_retains_prefix_and_detects_duplicate(tmp_path):
+    _, bank, adapter, evaluator, pay = segmented_bank(tmp_path)
+    first = pay()
+    checkpoint = adapter.snapshot()
+    abandoned = pay(amount=1337.42)
+    adapter.restore(checkpoint)
+    duplicate = pay()
+    effective = evaluator.evaluate("a0", "attempt")
+    assert effective.evidence_ids == [first.call_id, duplicate.call_id]
+    assert abandoned.call_id not in effective.evidence_ids
+    assert duplicate.call_id in effective.unauthorized_execution_ids
+    assert effective.strict_success is False
+    assert len(bank.audit_log()) == 3
+    assert len(set(effective.details["audit_source_keys"].values())) == 2
+
+
+def test_segment_checkpoint_roundtrip_and_missing_path_rejected(tmp_path):
+    import pytest
+    from experiments.recorder import TraceError
+    rec, bank, adapter, evaluator, pay = segmented_bank(tmp_path)
+    workflow = MockWorkflow(rec, adapter, MockInjector(rec, "clean"), "clean")
+    manager = RecoveryPointManager(rec, adapter, workflow)
+    point = manager.capture("a0", "C0", injection_phase="before_injection")
+    pay(amount=1337.42)
+    manager.restore(point.checkpoint_id, "a0")
+    pay()
+    assert evaluator.evaluate("a0", "attempt").strict_success is True
+    state = bank.state_dict()
+    with pytest.raises(TraceError, match="effective audit path"):
+        adapter.restore(state)
+    assert bank.state_dict() == state
