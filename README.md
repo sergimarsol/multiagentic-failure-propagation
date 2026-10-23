@@ -20,6 +20,37 @@ uv run python scripts/replay_ground_truth.py   # scripted (no-LLM) run of every 
 | `docs/phase1_plan.md`, `docs/assignment.md` | project plan and course assignment |
 | `progress.md` | team progress notes |
 
+## B: local-model workflow
+
+Part B implements separate Researcher, Planner and Executor model conversations, plus an optional
+evidence-based Verifier. It uses A's permission-checked tools and D's existing Phase 1 runner.
+Implementation, the C injection contract and review notes: [`docs/workflow.md`](docs/workflow.md).
+
+With your model service running, set `MODEL_ID`, `MODEL_BASE_URL`, and `PLAN_FORMAT` for your deployment (see [setup instructions](docs/workflow.md#connect-a-model-and-run)):
+
+```bash
+uv run --frozen python scripts/run_workflow.py \
+  --model "${MODEL_ID:?Set MODEL_ID}" \
+  --base-url "${MODEL_BASE_URL:?Set MODEL_BASE_URL}" \
+  --plan-format "${PLAN_FORMAT:?Set PLAN_FORMAT}" \
+  --task user_task_0 --output runs/new-clean-bill
+```
+
+These commands make real model calls. Each invocation needs a fresh output directory.
+They do not use ground-truth actions as model inputs. Model errors and failed experiments are retained.
+Model setup and all-query commands are in [workflow.md](docs/workflow.md); recorded model results and pass rates are in [results.md](docs/results.md).
+
+## D: experiment infrastructure
+
+The Phase 1 tracing, checkpoints, full restart and metrics modules are documented in
+[`docs/d_infrastructure.md`](docs/d_infrastructure.md). Run a synthetic example without a model:
+
+```bash
+python -m scripts.run_d_mock --scenario restart --output runs/d-example
+```
+
+Use a fresh output directory. Mock outputs are software-test fixtures, not model results.
+
 ## Environment (short)
 
 - **Benchmark:** AgentDojo 0.1.35, benchmark version v1.2.2, Banking suite, default (no-attack) data. Pins: `env/PINS.md`.
@@ -134,3 +165,13 @@ Every row (and about 60 more corner cases) is a test in `tests/`.
 - Free text inside an allowed payment (its subject) is not inspected.
 - If an evaluation reports `warnings` (wrong starting state, log lines from another task, a crashing check), the
   experiment harness was misused and the result should not be reported.
+
+## Minimum Phase 1 integration
+
+Start with [PHASE1_INTEGRATION.md](PHASE1_INTEGRATION.md). The factory-based runner creates a new environment and agent session for full restart; stage checkpoints are optional.
+
+```sh
+uv run python scripts/run_phase1_example.py --condition full_restart --output runs/minimal-restart
+```
+
+This example uses real Banking tools/scoring and scripted agents/injection, not a model experiment. See [capability status](docs/PHASE1_CAPABILITIES.md) and [optional advanced recovery](docs/ADVANCED_RECOVERY.md).
