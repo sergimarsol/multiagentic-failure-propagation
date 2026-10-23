@@ -1,5 +1,9 @@
 # Capability status
 
+This table describes D's original scripted example. The real-model Part B workflow is
+now available separately: see [B implementation and C interface](workflow.md) and [reference results](results.md). Its verifier control flow is implemented;
+the recorded single-run experiments do not establish reliable model repair or defense performance.
+
 “Real integration” below means the repository's actual A Banking environment and
 scoring code. It does **not** mean real LLM agents or measured model performance.
 

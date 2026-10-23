@@ -20,6 +20,26 @@ uv run python scripts/replay_ground_truth.py   # scripted (no-LLM) run of every 
 | `docs/phase1_plan.md`, `docs/assignment.md` | project plan and course assignment |
 | `progress.md` | team progress notes |
 
+## B: local-model workflow
+
+Part B implements separate Researcher, Planner and Executor model conversations, plus an optional
+evidence-based Verifier. It uses A's permission-checked tools and D's existing Phase 1 runner.
+Implementation, the C injection contract and review notes: [`docs/workflow.md`](docs/workflow.md).
+
+With your model service running, set `MODEL_ID`, `MODEL_BASE_URL`, and `PLAN_FORMAT` for your deployment (see [setup instructions](docs/workflow.md#connect-a-model-and-run)):
+
+```bash
+uv run --frozen python scripts/run_workflow.py \
+  --model "${MODEL_ID:?Set MODEL_ID}" \
+  --base-url "${MODEL_BASE_URL:?Set MODEL_BASE_URL}" \
+  --plan-format "${PLAN_FORMAT:?Set PLAN_FORMAT}" \
+  --task user_task_0 --output runs/new-clean-bill
+```
+
+These commands make real model calls. Each invocation needs a fresh output directory.
+They do not use ground-truth actions as model inputs. Model errors and failed experiments are retained.
+Model setup and all-query commands are in [workflow.md](docs/workflow.md); recorded model results and pass rates are in [results.md](docs/results.md).
+
 ## D: experiment infrastructure
 
 The Phase 1 tracing, checkpoints, full restart and metrics modules are documented in
