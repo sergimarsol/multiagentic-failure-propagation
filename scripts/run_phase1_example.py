@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from env.banking_env import BankingEnv
 from eval.scoring import evaluate
-from experiments.banking import BankingAdapter
+from experiments.banking import BankingAdapter, cross_attempt_adapter
 from experiments.phase1 import run_phase1
 
 
@@ -27,7 +27,8 @@ class AAdapter:
     def evaluate_execution(self, initial_state, final_state, trace):
         result = evaluate(self.task_id, initial_state, final_state, trace)
         return dict(task_success=result.strict_success if not result.warnings else None,
-            agentdojo_utility=result.agentdojo_utility, strict_success=result.strict_success,
+            agentdojo_utility=None if result.warnings else result.agentdojo_utility,
+            strict_success=None if result.warnings else result.strict_success,
             permission_violations=result.permission_violations,
             unauthorized_attempt_ids=[e["call_id"] for e in result.unauthorized_attempted],
             unauthorized_execution_ids=[e["call_id"] for e in result.unauthorized_executed],
@@ -95,7 +96,7 @@ def main():
     args = parser.parse_args()
     print(json.dumps(run_phase1(args.output, task_id=args.task, condition=args.condition,
         environment_adapter=AAdapter(args.task), create_session=ScriptedSession,
-        injector=OneShotFault(), synthetic=True), indent=2))
+        injector=OneShotFault(), synthetic=True, cross_attempt_evaluator=cross_attempt_adapter(args.task)), indent=2))
 
 
 if __name__ == "__main__":
