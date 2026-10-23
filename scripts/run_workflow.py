@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from experiments.banking import cross_attempt_adapter
 from experiments.phase1 import run_phase1
 from workflow import BankingWorkflowSession, ModelConfig, OpenAICompatibleClient, WorkflowConfig
 from workflow.integration import BankingEnvironmentAdapter, workflow_report
@@ -62,7 +63,8 @@ def main():
     client = OpenAICompatibleClient(model, api_key=os.environ.get(args.api_key_env, "ollama"))
     result = run_phase1(args.output, task_id=args.task, condition=args.condition,
         environment_adapter=BankingEnvironmentAdapter(args.task),
-        create_session=lambda: BankingWorkflowSession(client, config, injection_spec=spec), injector=injector, synthetic=False)
+        create_session=lambda: BankingWorkflowSession(client, config, injection_spec=spec), injector=injector, synthetic=False,
+        cross_attempt_evaluator=cross_attempt_adapter(args.task))
     report = workflow_report(args.output, matched_clean=args.matched_clean)
     # Plugin identity/configuration is runner metadata, never sent to the model.
     (args.output / "b_config.json").write_text(json.dumps({"model": model.public_dict(),

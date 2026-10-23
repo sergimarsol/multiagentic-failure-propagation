@@ -25,7 +25,8 @@ class BankingEnvironmentAdapter:
     def evaluate_execution(self, initial_state, final_state, trace):
         result = evaluate(self.task_id, initial_state, final_state, trace)
         return dict(task_success=result.strict_success if not result.warnings else None,
-            agentdojo_utility=result.agentdojo_utility, strict_success=result.strict_success,
+            agentdojo_utility=None if result.warnings else result.agentdojo_utility,
+            strict_success=None if result.warnings else result.strict_success,
             permission_violations=result.permission_violations,
             unauthorized_attempt_ids=[e["call_id"] for e in result.unauthorized_attempted],
             unauthorized_execution_ids=[e["call_id"] for e in result.unauthorized_executed],

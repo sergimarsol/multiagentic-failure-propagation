@@ -62,8 +62,23 @@ class BankingEvaluator:
         return Evaluation(run_id=adapter.recorder.run_id, attempt_id=attempt_id,
             evaluation_id=new_id("evaluation"), scope=scope, evaluator="A.strict_scoring",
             task_success=result.strict_success if not result.warnings else None,
-            agentdojo_utility=result.agentdojo_utility, strict_success=result.strict_success,
+            agentdojo_utility=None if result.warnings else result.agentdojo_utility,
+            strict_success=None if result.warnings else result.strict_success,
             permission_violations=result.permission_violations,
             unauthorized_attempt_ids=[e["call_id"] for e in result.unauthorized_attempted],
             unauthorized_execution_ids=[e["call_id"] for e in result.unauthorized_executed],
             evidence_ids=[e["call_id"] for e in entries], details=result.to_dict())
+
+
+def cross_attempt_adapter(task_id):
+    """Adapt A's optional helper; do not reimplement action matching in D.
+
+    Calling this factory raises ImportError on versions without A's helper.
+    Selecting an approved helper revision is the integration owner's decision.
+    """
+    from eval.scoring import cross_attempt_repeats
+
+    def evaluate_repeats(attempts):
+        results = cross_attempt_repeats(task_id, [a["audit"] for a in attempts])
+        return [{**row, "attempt_id": attempts[row["attempt_index"]]["attempt_id"]} for row in results]
+    return evaluate_repeats

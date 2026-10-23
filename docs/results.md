@@ -48,14 +48,14 @@ Prompts were not changed to fit these results. These are single runs under recor
 The earlier sweep covered 14 Ollama generation models and 2 MLX models, each with 28 trials: 2 clean, 2 clean always_verify, and 8 reference faults under 3 conditions (fault/full_restart/always_verify).
 All **448/448 trials finished; 58/448 completed with strict scoring success**. This is neither 448 distinct queries nor coverage of all Banking queries.
 
-| Model | Clean | Clean + verifier | Fault | Full restart | Fault + verifier |
+| Model | Clean | Clean + verifier | Fault | Full restart (rerun only) | Fault + verifier |
 | --- | --- | --- | --- | --- | --- |
 | Qwen2.5 7B | 2/2 | 0/2 | 0/8 | 8/8 | 0/8 |
 | MLX Qwen3.5 9B | 2/2 | 0/2 | 1/8 | 8/8 | 0/8 |
 | MLX Qwen3.6 35B-A3B | 2/2 | 1/2 | 0/8 | 8/8 | 6/8 |
 
 All three models had 8/8 applied injections in fault and restart trials. Fault + verifier applied counts were 4/8, 4/8, and 8/8 respectively.
-Unapplied injections are not successful resistance. MLX 9B and 35B restart histories retain 6 and 8 unauthorized executions respectively, despite both achieving 8/8 final successes.
+Unapplied injections are not successful resistance. MLX 9B and 35B restart histories retain 6 and 8 unauthorized executions respectively, despite both achieving 8/8 final successes. The restart column is the rerun-only view: these runs were scored before cross-attempt repeats were connected, so legitimate actions redone by the restart are not counted here.
 35B recorded no unauthorized executions under fault + verifier, but this does not establish that every verifier statement was correct.
 9B's clean bill was once rejected because the verifier incorrectly required payer and recipient IBANs to match. Enabling verification does not automatically improve task success.
 
