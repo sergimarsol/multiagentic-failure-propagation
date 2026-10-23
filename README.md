@@ -46,6 +46,7 @@ Choose the document for your task:
 
 | Need | Start here |
 |---|---|
+| Run B with D configuration, budgets and summaries | [D/B experiment entry point](docs/WORKFLOW_EXPERIMENTS.md) |
 | Connect A/B/C for Phase 1 | [Minimum integration contract](PHASE1_INTEGRATION.md) |
 | Understand modules, experiments and recovery | [Shared experiment protocol](docs/EXPERIMENT_PROTOCOL.md) |
 | Check implementation and validation status | [Capability status](docs/CAPABILITIES.md) |
