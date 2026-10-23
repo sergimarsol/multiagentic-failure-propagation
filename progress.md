@@ -1,6 +1,6 @@
 # Progress
 
-Last update: 2026-10-20. Covers the environment and evaluation part. The workflow, injection and tracing parts are not started yet.
+Last update: 2026-10-23. Covers the environment and evaluation part. The tracing/restart (D) and agent workflow (B) parts are merged into `main` too; the injection harness (C) is not in the repo yet.
 
 ## What exists
 
