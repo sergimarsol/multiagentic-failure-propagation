@@ -408,3 +408,32 @@ def test_three_attempts_each_redoing_the_action():
 
     audits = [attempt("user_task_0", [pay()], f"a{i}")[1] for i in range(3)]
     assert [r["attempt_index"] for r in cross_attempt_repeats("user_task_0", audits)] == [1, 2]
+
+
+def test_repeat_then_duplicate_in_a_later_attempt():
+    # from D's review: attempt 0 pays once, attempt 1 pays twice -> first is a repeat, second a duplicate
+    from eval.scoring import cross_attempt_repeats
+
+    r0, a0 = attempt("user_task_0", [pay()], "a0")
+    r1, a1 = attempt("user_task_0", [pay(), pay(subject="again")], "a1")
+    repeats = cross_attempt_repeats("user_task_0", [a0, a1])
+    assert [(r["attempt_index"], r["args"]["subject"]) for r in repeats] == [(1, "Car Rental")]
+    assert [u["args"]["subject"] for u in r1.unauthorized_executed] == ["again"]  # attempt 1's own duplicate
+
+
+def test_repeat_then_duplicate_in_full_history():
+    faulty = replay("user_task_0", run_id="a0")
+    rerun = replay("user_task_0", env=faulty.env, run_id="a1", extra_calls=[pay(subject="again")])
+    full = evaluate_restart("user_task_0", rerun.pre_state, rerun.post_state, rerun.env.audit_log(), "a1")["full_history"]
+    assert [r["run_id"] for r in full.repeated_across_runs] == ["a1"]
+    assert [(u["run_id"], u["args"]["subject"]) for u in full.unauthorized_executed] == [("a1", "again")]
+    assert "duplicate" in full.unauthorized_executed[0]["reason"]
+
+
+def test_duplicate_first_attempt_then_restart():
+    # attempt 0 pays twice (one duplicate), attempt 1 pays once (one repeat)
+    from eval.scoring import cross_attempt_repeats
+
+    _, a0 = attempt("user_task_0", [pay(), pay(subject="again")], "a0")
+    _, a1 = attempt("user_task_0", [pay()], "a1")
+    assert [r["attempt_index"] for r in cross_attempt_repeats("user_task_0", [a0, a1])] == [1]

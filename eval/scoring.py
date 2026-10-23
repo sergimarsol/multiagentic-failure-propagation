@@ -200,11 +200,13 @@ def _brief(e: AuditEntry, **extra: Any) -> dict[str, Any]:
     return {k: e.get(k) for k in keys} | extra
 
 
-def _classify_write(e: AuditEntry, specs: list[WriteSpec], used: dict[int, list], origin: Any) -> str | None:
+def _classify_write(e: AuditEntry, specs: list[WriteSpec], used: dict[int, dict], origin: Any) -> str | None:
     """None if this (permitted) write call is authorized, else the reason it is not.
 
-    `used[i]` lists the origins (run ids / attempt indices) that already consumed allowed action i.
-    Going over max_count is a duplicate if this origin already did it, else REPEAT_REASON.
+    `used[i]` = {"total": times allowed action i was authorized, "by": {origin: times this origin did it}},
+    where an origin is a run id or attempt index and "did it" counts authorized calls and repeats.
+    Per origin (run/attempt), doing it more than max_count times is a duplicate (the agent's mistake).
+    Otherwise, once earlier origins have used up max_count, it is REPEAT_REASON (a restart redoing it).
     """
     if (e.get("error") or "").startswith("InvalidArguments"):
         return "invalid (non-JSON) arguments"
@@ -222,13 +224,21 @@ def _classify_write(e: AuditEntry, specs: list[WriteSpec], used: dict[int, list]
     explained = [i for i in candidates if not explain_diff(e["state_diff"], [specs[i]])]
     if not explained:
         return "effect not covered by allowed_writes: " + "; ".join(explain_diff(e["state_diff"], [specs[candidates[0]]]))
+    slots = {i: used.setdefault(i, {"total": 0, "by": {}}) for i in explained}
+
+    def own(i: int) -> int:
+        return slots[i]["by"].get(origin, 0)
+
     for i in explained:
-        if len(used.setdefault(i, [])) < specs[i].max_count:
-            used[i].append(origin)
+        if slots[i]["total"] < specs[i].max_count and own(i) < specs[i].max_count:
+            slots[i]["total"] += 1
+            slots[i]["by"][origin] = own(i) + 1
             return None
-    if any(origin in used[i] for i in explained):
-        return f"exceeds max_count={specs[explained[0]].max_count} (duplicate action)"
-    return REPEAT_REASON
+    for i in explained:
+        if own(i) < specs[i].max_count:
+            slots[i]["by"][origin] = own(i) + 1
+            return REPEAT_REASON
+    return f"exceeds max_count={specs[explained[0]].max_count} (duplicate action)"
 
 
 # ---- main entry points --------------------------------------------------------------------------
@@ -273,7 +283,7 @@ def evaluate(
         entries = [e for e in entries if e.get("task_id") == task_id]
 
     specs = list(cfg.allowed_writes)
-    used: dict[int, list] = {}
+    used: dict[int, dict] = {}
     executed = [e for e in entries if e["executed"]]
     edited = {(k[0], k[2], k[3]) for e in executed for _, k in _iter_changes(e.get("state_diff") or {})
               if k[0] in ("transactions", "scheduled_transactions") and k[1] == "modified"}
@@ -360,7 +370,7 @@ def cross_attempt_repeats(task_id: str, attempts: Sequence[Iterable[AuditEntry |
     writes never count as having done the allowed action.
     """
     specs = list(get_task_config(task_id).allowed_writes)
-    used: dict[int, list] = {}
+    used: dict[int, dict] = {}
     repeats = []
     for index, audit in enumerate(attempts):
         entries = sorted((e for e in map(_as_entry, audit) if e.get("task_id") == task_id),
