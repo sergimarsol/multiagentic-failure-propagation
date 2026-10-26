@@ -44,11 +44,12 @@ Model setup and all-query commands are in [workflow.md](docs/workflow.md); recor
 
 ## C: fault injection and propagation analysis
 
-Part C implements eight fixed fault-injection scenarios across the Researcher-to-Planner and Planner-to-Executor handoffs, covering accidental data corruption and adversarial attacks. It uses B's real workflow, A's Banking environment and scorer, and D's existing trace recorder.
+Part C implements ten fixed fault-injection scenarios across the Researcher-to-Planner and Planner-to-Executor handoffs, covering accidental data corruption and adversarial attacks through four contamination types: R→P fact contamination, R→P note contamination, P→E note contamination, and P→E action contamination. It uses B's real workflow, A's Banking environment and scorer, and D's existing trace recorder.
 
-Implementation, experiment setup, and analysis instructions: [README_Demo_Injection.md](README_Demo_Injection.md).
+Implementation, experiment setup, and analysis instructions:
+[README_Demo_Injection.md](README_Demo_Injection.md).
 
-With your model service running, set `MODEL_ID`, `MODEL_BASE_URL`, and `TRITONAI_API_KEY` for your deployment (see [setup instructions](docs/workflow.md#connect-a-model-and-run)):
+With your model service running, set `MODEL_ID`, `MODEL_BASE_URL`, and `TRITONAI_API_KEY` for your deployment (see setup instructions):
 
 ```bash
 uv run --frozen python scripts/demo_injection.py \
@@ -61,7 +62,7 @@ uv run --frozen python scripts/demo_injection.py \
 
 This command runs a paired clean/fault experiment using real model calls. Each session creates a fresh output directory under `runs/c-injection-demo/`. With `--analyze`, the results include `trace_analysis.json`, `trace_analysis.csv`, and `trace_analysis.md` for evidence-based fault propagation analysis.
 
-All eight scenarios and the `always_verify` and `full_restart` conditions are supported. See [README_Demo_Injection.md](README_Demo_Injection.md) for additional commands and result interpretation.
+All ten scenarios support the `always_verify` and `full_restart` conditions. The default `--all` and `--matrix` commands retain the original eight-scenario experimental matrix, while the two additional P→E note injection scenarios can be run individually using `--scenario`. See [README_Demo_Injection.md](README_Demo_Injection.md) for additional commands and result interpretation.
 
 
 
