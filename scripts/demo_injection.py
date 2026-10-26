@@ -45,9 +45,9 @@ INJECTOR_FACTORY = "faults.injection_harness:make_injector"
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     selection = p.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--list", action="store_true", help="List eight payloads; no model calls")
+    selection.add_argument("--list", action="store_true", help="List all 10 payloads; no model calls")
     selection.add_argument("--scenario", metavar="ID", help="Run a single fixed fault scenario")
-    selection.add_argument("--all", action="store_true", help="Run 8 scenarios (or both clean tasks)")
+    selection.add_argument("--all", action="store_true", help="Run 8 core scenarios (or both clean tasks)")
     selection.add_argument("--task", choices=TASKS, help="Run a clean task baseline")
     selection.add_argument("--matrix", action="store_true", help="2 clean + 8 x 3 fault conditions = 26 runs")
     p.add_argument("--condition", choices=CONDITIONS,
@@ -90,12 +90,13 @@ def _site(case: dict) -> str:
 # conditions, including clean baselines when pairing is enabled.
 def _make_plan(args: argparse.Namespace, cases: dict[str, dict]) -> list[dict]:
     """An ordered list; matched baselines are resolved within this session."""
+    core_cases = [c for c in cases.values() if c["operation"] != "append_plan_note"]
     if args.matrix:
         if args.condition or args.paired or args.matched_clean:
             raise ValueError("--matrix cannot be combined with --condition, --paired or --matched-clean")
         return ([dict(task_id=t, condition="clean") for t in TASKS] +
                 [dict(task_id=c["task_id"], condition=condition, scenario_id=c["id"])
-                 for c in cases.values() for condition in FAULT_CONDITIONS])
+                 for c in core_cases for condition in FAULT_CONDITIONS])
 
     condition = args.condition or ("clean" if args.task else "fault")
     if args.task:
@@ -113,7 +114,7 @@ def _make_plan(args: argparse.Namespace, cases: dict[str, dict]) -> list[dict]:
 
     if args.all and condition == "clean":
         return [dict(task_id=t, condition="clean") for t in TASKS]
-    targets = list(cases.values()) if args.all else [cases[args.scenario]]
+    targets = core_cases if args.all else [cases[args.scenario]]
     faults = [dict(task_id=c["task_id"], scenario_id=c["id"], condition=condition)
               for c in targets]
     if args.paired:

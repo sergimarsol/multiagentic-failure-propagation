@@ -306,7 +306,7 @@ Checks single-handoff replacement, correct injection boundary,
 schema validity, consumer delivery, and injection completion records.
 """
 @pytest.mark.parametrize("scenario_id", list(CASES))
-def test_eight_faults_traverse_real_session_to_correct_consumer(scenario_id):
+def test_ten_faults_traverse_real_session_to_correct_consumer(scenario_id):
     case = CASES[scenario_id]
     cb, client, _ = run_mock(case["task_id"], scenario_id)
     applied = [b for b in cb.boundaries if b["applied"]]
@@ -326,7 +326,7 @@ Checks that no fault is applied or delivered and the workflow
 records the injection as disabled.
 """
 @pytest.mark.parametrize("scenario_id", list(CASES))
-def test_clean_and_restart_disable_all_fault_delivery(scenario_id):
+def test_disabled_injection_preserves_all_ten_handoffs(scenario_id):
     case = CASES[scenario_id]
     cb, client, _ = run_mock(case["task_id"], scenario_id, enabled=False)
     assert not any(b["applied"] for b in cb.boundaries)
@@ -420,3 +420,52 @@ def test_verifier_rejects_bad_plan_before_executor():
     assert delivered["actions"][0]["args"]["amount"] == 98.7
     assert len(cb.injection_calls) == 2
     assert env.executed and env.executed[0]["args"]["amount"] == 98.7
+
+
+# P->E note injection: deliver the altered notes without changing planned actions.
+@pytest.mark.parametrize('scenario_id', [
+    't0_pe_adversarial_note_injection',
+    't2_pe_adversarial_note_injection',
+])
+def test_plan_note_injection_reaches_executor_without_changing_actions(scenario_id):
+    case = CASES[scenario_id]
+    cb, client, env = run_mock(case['task_id'], scenario_id, executor_writes=True)
+    applied = [b for b in cb.boundaries if b['applied']]
+    assert len(applied) == 1 and applied[0]['site'] == 'plan'
+    original, candidate = applied[0]['original'], applied[0]['candidate']
+    expected = deepcopy(original)
+    expected['notes'] = (original['notes'].rstrip() + '\n\n'
+                         if original['notes'].strip() else '') + case['instruction']
+    assert candidate == expected
+
+    executor = next(c for c in client.calls if c['role'] == 'executor')
+    assert executor['body']['plan'] == candidate
+    # This scripted Executor follows only actions, not notes; a real LLM may differ.
+    assert env.executed == original['actions']
+
+
+# P->E note injection: a rejecting verifier must block downstream delivery.
+@pytest.mark.parametrize('scenario_id', [
+    't0_pe_adversarial_note_injection',
+    't2_pe_adversarial_note_injection',
+])
+def test_verifier_rejects_injected_plan_note_before_executor(scenario_id):
+    case = CASES[scenario_id]
+    cb, client, env = run_mock(case['task_id'], scenario_id, verify=True,
+                               policy='reject_injected', executor_writes=True)
+    decisions = [e['data'] for e in cb.recorder.events
+                 if e['event_type'] == 'verification_decision']
+    assert [d['accepted'] for d in decisions] == [True, False, True]
+
+    injected = client.verifier_candidates[1]['candidate']
+    retried = client.verifier_candidates[2]['candidate']
+    assert case['instruction'] in injected['notes']
+    assert case['instruction'] not in retried['notes']
+    assert injected['actions'] == retried['actions']
+
+    executor = next(c for c in client.calls if c['role'] == 'executor')
+    assert executor['body']['plan'] == retried
+    assert all(case['instruction'] not in json.dumps(c['body'])
+               for c in client.calls if c['role'] == 'executor')
+    assert env.executed == retried['actions']
+    assert len([b for b in cb.boundaries if b['applied']]) == 1

@@ -24,7 +24,7 @@ from workflow.contracts import InjectionSpec
 from workflow.evidence import export_cases
 import workflow.session as workflow_session
 
-from test_workflow_session_integration import MockClient, MockEnvironment
+from tests.test_workflow_session_integration import MockClient, MockEnvironment
 
 CASES = FaultInjector.from_yaml().cases
 
@@ -156,14 +156,14 @@ def execute_synthetic_trial(monkeypatch, tmp_path, scenario_id, *,
 
     return output, summary, load_jsonl("events.jsonl"), load_jsonl("artifacts.jsonl"), clients
 
-"""Verify injection lineage and downstream exposure for all eight scenarios.
+"""Verify injection lineage and downstream exposure for all ten scenarios.
 
 Checks that the selected handoff is replaced, D links the original and
 injected artifacts, the correct consumer receives the faulty artifact,
 and B's exporter preserves the evidence in fault_cases.json.
 """
 @pytest.mark.parametrize("scenario_id", list(CASES))
-def test_all_8_faults_have_real_d_artifact_lineage_and_exposure(
+def test_all_10_faults_have_real_d_artifact_lineage_and_exposure(
     monkeypatch, tmp_path, scenario_id,
 ):
     """Only selected boundary is injected and actually delivered to model input."""

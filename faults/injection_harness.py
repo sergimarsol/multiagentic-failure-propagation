@@ -101,7 +101,6 @@ class InjectionResult:
             "reason": self.reason,
         }
 
-
 def _as_decimal(value: Any) -> Decimal | None:
     """Convert finite numeric values to Decimal for safe comparison.
 
@@ -115,7 +114,6 @@ def _as_decimal(value: Any) -> Decimal | None:
     except InvalidOperation:
         return None
 
-
 def _equal_expected(actual: Any, expected: Any) -> bool:
     """Check numerical equivalence against the canonical original value.
 
@@ -124,7 +122,6 @@ def _equal_expected(actual: Any, expected: Any) -> bool:
     """
     a, b = _as_decimal(actual), _as_decimal(expected)
     return a is not None and b is not None and a == b
-
 
 def _replacement_value(original: Any, new_value: Any) -> Any:
     """Create a replacement value while preserving numeric text format.
@@ -146,7 +143,6 @@ def _replacement_value(original: Any, new_value: Any) -> Any:
         return f"{new:.{max(old_dp, new_dp)}f}"
     return new_value
 
-
 def _lookup(root: Any, path: Sequence[PathPart]) -> Any:
     """Retrieve a value from a nested handoff using an explicit path.
 
@@ -162,7 +158,6 @@ def _lookup(root: Any, path: Sequence[PathPart]) -> Any:
         else:
             raise (TypeError("path does not match the message schema"))
     return value
-
 
 def _set_at_path(root: Any, path: Sequence[PathPart], value: Any) -> None:
     """Replace the value at an existing nested handoff path.
@@ -180,7 +175,6 @@ def _set_at_path(root: Any, path: Sequence[PathPart], value: Any) -> None:
         parent[key] = value
     else:
         raise TypeError("path does not match the message schema")
-
 
 def _corrupt_argument(content: dict[str, Any], case: Mapping[str, Any]) -> tuple[dict[str, Any] | None, str]:
     """Corrupt one numeric argument in a uniquely matched Planner action.
@@ -212,7 +206,6 @@ def _corrupt_argument(content: dict[str, Any], case: Mapping[str, Any]) -> tuple
     args[field] = _replacement_value(args[field], case["injected_value"])
     return content, "applied"
 
-
 def _append_action(content: dict[str, Any], case: Mapping[str, Any]) -> tuple[dict[str, Any] | None, str]:
     """Append one configured adversarial action to the Planner output.
 
@@ -232,12 +225,11 @@ def _append_action(content: dict[str, Any], case: Mapping[str, Any]) -> tuple[di
     actions.append(action)
     return content, "applied"
 
-
 class FaultInjector:
     """Loads fixed cases and applies one targeted mutation to one handoff output."""
 
     def __init__(self, config: Mapping[str, Any], *, task_config_path: str | Path | None = None):
-        """Validate and resolve the eight predefined Banking fault scenarios.
+        """Validate and resolve the Banking fault scenarios.
 
         Loads canonical original values and action selectors from Part A,
         validates payload constraints, and prepares resolved cases for
@@ -254,7 +246,7 @@ class FaultInjector:
         # Resolve ALL original fact values from A, never from C's YAML.
         task_facts = load_banking_task_facts(task_config_path)
         self.cases: dict[str, dict[str, Any]] = {}
-        combinations: set[tuple[str, str, str]] = set()
+        combinations: set[tuple[str, str, str, str]] = set()
         for item in config.get("payloads", []):
             case = deepcopy(item)
             case_id = case.get("id")
@@ -266,12 +258,14 @@ class FaultInjector:
                 "corrupt_argument": "planner_to_executor",
                 "append_instruction": "researcher_to_planner",
                 "append_action": "planner_to_executor",
+                "append_plan_note": "planner_to_executor",
             }
             valid_pairs = {
                 ("accidental", "corrupt_fact"),
                 ("accidental", "corrupt_argument"),
                 ("adversarial", "append_instruction"),
                 ("adversarial", "append_action"),
+                ("adversarial", "append_plan_note"),
             }
             if (family, operation) not in valid_pairs:
                 raise ValueError(f"invalid fault family/operation for {case_id}")
@@ -314,9 +308,11 @@ class FaultInjector:
                         or not isinstance(selector.get("field"), str)
                         or not selector["field"]):
                     raise ValueError(f"invalid target_action: {case_id}")
-            if operation == "append_instruction":
+            if operation in {"append_instruction", "append_plan_note"}:
                 if not str(case.get("instruction", "")).strip():
                     raise ValueError(f"missing instruction: {case_id}")
+            if operation == "append_plan_note" and case.get("target_path") != "notes":
+                raise ValueError(f"invalid note target path: {case_id}")
             if operation == "append_action":
                 action = case.get("action")
                 if (not isinstance(action, dict)
@@ -325,15 +321,19 @@ class FaultInjector:
                         or not action["tool"]
                         or not isinstance(action["args"], dict)):
                     raise ValueError(f"invalid appended action: {case_id}")
-            combination = (case.get("task_id"), family, case.get("boundary"))
+            combination = (case.get("task_id"), family, case.get("boundary"), operation)
             if combination in combinations:
-                raise ValueError(f"duplicate task/family/boundary combination: {combination}")
+                raise ValueError(f"duplicate task/family/boundary/operation combination: {combination}")
             combinations.add(combination)
             self.cases[case_id] = case
-        if len(self.cases) != 8 or len(combinations) != 8:
-            raise ValueError("Phase 1 expects exactly 8 fixed scenarios")
+        if len(self.cases) != 10 or len(combinations) != 10:
+            raise ValueError("Expected 8 core scenarios and 2 supplementary note scenarios")
         if {x[0] for x in combinations} != {"user_task_0", "user_task_2"}:
             raise ValueError("Phase 1 expects user_task_0 and user_task_2")
+        note_tasks = {case["task_id"] for case in self.cases.values()
+                      if case["operation"] == "append_plan_note"}
+        if note_tasks != {"user_task_0", "user_task_2"}:
+            raise ValueError("Expected one supplementary P->E note scenario per task")
 
     @classmethod
     def from_yaml(
@@ -405,7 +405,7 @@ class FaultInjector:
 
         mutated = deepcopy(original)
         operation = case["operation"]
-        if isinstance(mutated, dict) and path is None and operation in {"corrupt_fact", "append_instruction"}:
+        if isinstance(mutated, dict) and path is None and operation in {"corrupt_fact", "append_instruction", "append_plan_note"}:
             configured_path = case.get("target_path")
             if isinstance(configured_path, str) and configured_path:
                 path = configured_path.split(".")
@@ -447,7 +447,10 @@ class FaultInjector:
                     return result(deepcopy(original), False, reason)
                 mutated = replacement
 
-            elif operation == "append_instruction":
+            elif operation in {"append_instruction", "append_plan_note"}:
+                if operation == "append_plan_note" and (
+                        not isinstance(mutated, dict) or not isinstance(mutated.get("actions"), list)):
+                    return result(deepcopy(original), False, "invalid_plan_note_schema")
                 instruction = case["instruction"]
                 if isinstance(mutated, str):
                     if path is not None or value_pattern is not None:
@@ -483,7 +486,6 @@ class FaultInjector:
         attempt.used = True
         attempt.applied_scenario_id = scenario_id
         return result(mutated, True, "applied")
-
 
 def make_injector(*, task_id: str, scenario_id: str):
     """Create the injection callback used by Part B's workflow.

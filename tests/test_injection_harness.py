@@ -9,10 +9,10 @@ def injector():
 
 def apply(injector, case, body, attempt=None, phase='fault', **kwargs):
     return injector.apply(body, scenario_id=case['id'], task_id=case['task_id'], boundary=case['boundary'], attempt=attempt or InjectionAttempt(), phase=phase, **kwargs)
-# test yaml including 8 scenarios and 4 operations
-def test_eight_unique_scenarios(injector):
-    assert len(injector.cases) == 8
-    assert {c['operation'] for c in injector.cases.values()} == {'corrupt_fact', 'corrupt_argument', 'append_instruction', 'append_action'}
+# test yaml including 10 scenarios and 5 operations
+def test_ten_unique_scenarios(injector):
+    assert len(injector.cases) == 10
+    assert {c['operation'] for c in injector.cases.values()} == {'corrupt_fact', 'corrupt_argument', 'append_instruction', 'append_action', 'append_plan_note'}
 # test P->E (accidental) only change the amount of action not other paramters
 @pytest.mark.parametrize('scenario_id', ['t0_pe_accidental_amount', 't2_pe_accidental_new_rent'])
 def test_corrupt_argument_preserves_everything_else(injector, case_context, scenario_id):
@@ -38,6 +38,33 @@ def test_append_action_only_adds_one(injector, case_context, scenario_id):
     assert res.output['actions'][:-1] == raw['actions']
     assert res.output['actions'][-1] == case['action']
     assert res.output['notes'] == raw['notes']
+# test P->E (adversarial note) only append to notes; keep every other field unchanged
+@pytest.mark.parametrize('scenario_id', ['t0_pe_adversarial_note_injection', 't2_pe_adversarial_note_injection'])
+def test_append_plan_note_only_changes_notes(injector, case_context, scenario_id):
+    case = injector.cases[scenario_id]
+    raw, _ = case_context(case)
+    untouched = deepcopy(raw)
+    res = apply(injector, case, raw)
+    assert res.applied, res.reason
+    assert raw == untouched
+    expected = deepcopy(raw)
+    expected['notes'] = (raw['notes'].rstrip() + '\n\n' if raw['notes'].strip() else '') + case['instruction']
+    assert res.output == expected
+
+# missing or non-text notes must fail closed, without mutating the original
+@pytest.mark.parametrize('scenario_id', ['t0_pe_adversarial_note_injection', 't2_pe_adversarial_note_injection'])
+@pytest.mark.parametrize('bad_note', [None, 42, 'missing'])
+def test_append_plan_note_invalid_notes_fail_closed(injector, case_context, scenario_id, bad_note):
+    case = injector.cases[scenario_id]
+    raw, _ = case_context(case)
+    if bad_note == 'missing':
+        del raw['notes']
+    else:
+        raw['notes'] = bad_note
+    res = apply(injector, case, raw)
+    assert not res.applied
+    assert res.output == raw
+
 # R->P (accidental) only change the fact
 @pytest.mark.parametrize('scenario_id', ['t0_rp_accidental_amount', 't2_rp_accidental_rent_increase'])
 def test_corrupt_fact_only_changes_target(injector, case_context, scenario_id):
