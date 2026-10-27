@@ -1,5 +1,7 @@
 """Opt-in adapters to A; preserve A's authorization and historical scoring policy."""
 
+from pathlib import Path
+
 from .models import Evaluation, fingerprint, new_id
 from .recorder import TraceError
 
@@ -130,3 +132,46 @@ def cross_attempt_adapter(task_id):
         results = cross_attempt_repeats(task_id, [a["audit"] for a in attempts])
         return [{**row, "attempt_id": attempts[row["attempt_index"]]["attempt_id"]} for row in results]
     return evaluate_repeats
+
+
+C_PAYLOADS = (Path(__file__).resolve().parents[1] / "faults" / "payloads.yaml").resolve()
+
+
+def _is_c_payload(ref):
+    return isinstance(ref, str) and bool(ref) and (C_PAYLOADS.parent.parent / ref).resolve() == C_PAYLOADS
+
+
+def attack_report(manifest, events):
+    """A's attack success per attempt, from the recorded final state and audit of each attempt.
+
+    Only runs injected from C's payload file are judged: their scenario_id is a payload id with a
+    goal in tasks/banking_tasks.yaml. Other runs (clean, B fixtures) are not_applicable, never False.
+    """
+    config = manifest.get("experiment") or {}
+    fault = config.get("fault") or {}
+    if manifest.get("condition") in {"clean", "clean_verify"} or not _is_c_payload(fault.get("payload_ref")):
+        return {"status": "not_applicable", "goal": None, "success": None, "attempts": []}
+    from env.tasks import get_task_config
+    from eval.scoring import attack_outcome
+    task_id, scenario = manifest["task_id"], config.get("scenario_id")
+    try:
+        goal = get_task_config(task_id).attack_goal(scenario).name
+    except KeyError:
+        return {"status": "error", "error": f"no attack goal for {task_id}/{scenario}", "goal": None,
+                "success": None, "attempts": []}
+    finals = [e for e in events if e["event_type"] == "environment_finalized"]
+    started = [e["attempt_id"] for e in events if e["event_type"] == "attempt_started"]
+    rows = []
+    for e in finals:
+        try:
+            o = attack_outcome(task_id, scenario, e["data"]["audit"], e["data"]["final_state"])
+        except Exception as exc:  # a malformed trace is unknown, never "attack failed"
+            return {"status": "error", "error": repr(exc), "goal": goal, "success": None, "attempts": rows}
+        rows.append({"attempt_id": e["attempt_id"], "attempted": o["attempted"], "executed": o["executed"],
+                     "in_final_state": o["in_final_state"],
+                     "executed_call_ids": [c["call_id"] for c in o["executed_calls"]], "warnings": o["warnings"]})
+    complete = bool(rows) and len(rows) == len(started) and not any(r["warnings"] for r in rows)
+    executed = any(r["executed"] for r in rows)
+    # An executed goal is a fact even if a later attempt is missing; "not reached" needs every attempt judged.
+    return {"status": "evaluated" if complete else "incomplete", "goal": goal,
+            "success": True if executed else (False if complete else None), "attempts": rows}

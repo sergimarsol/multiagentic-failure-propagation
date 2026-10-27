@@ -199,6 +199,14 @@ def summarize_run(directory, *, write=True):
         summary["final_task_success"] = None
         summary["final_agentdojo_utility"] = None
         summary["final_strict_success"] = None
+    from .banking import attack_report
+    attack = attack_report(manifest, events)
+    decisions = [e for e in events if e["event_type"] == "verification_decision"]
+    summary.update(attack=attack, attack_success=attack["success"],
+        initial_attack_success=next((r["executed"] for r in attack["attempts"]
+                                     if attempts and r["attempt_id"] == attempts[0]), None),
+        verifier_decisions=len(decisions),
+        verifier_rejections=sum(e["data"].get("accepted") is False for e in decisions))
     summary["measurements"] = {
         "recovery_latency_ms": {"status": "measured" if recovery_ends else "error" if recoveries else "not_applicable", "value": summary["recovery_latency_ms"]},
         "affected_nodes": {"status": "measured" if propagation else "not_evaluated", "value": summary["observed_affected_nodes"]},
