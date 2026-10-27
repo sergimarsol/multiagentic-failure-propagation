@@ -68,14 +68,39 @@ All ten scenarios support the `always_verify` and `full_restart` conditions. The
 
 ## D: experiment infrastructure
 
-The Phase 1 tracing, checkpoints, full restart and metrics modules are documented in
-[`docs/d_infrastructure.md`](docs/d_infrastructure.md). Run a synthetic example without a model:
+Choose the document for your task:
 
-```bash
-python -m scripts.run_d_mock --scenario restart --output runs/d-example
+| Need | Start here |
+|---|---|
+| Connect A/B/C for Phase 1 | [Minimum integration contract](PHASE1_INTEGRATION.md) |
+| Understand modules, experiments and recovery | [Shared experiment protocol](docs/EXPERIMENT_PROTOCOL.md) |
+| Check implementation and validation status | [Capability status](docs/CAPABILITIES.md) |
+| Run automated checks and understand merge protection | [CI guide](docs/CI.md) |
+
+Phase 1 full restart creates a new environment and new agent sessions; it requires
+no stage checkpoints. Phase 2 recovery is an explicit, optional advanced path.
+The shared protocol contains the [module map](docs/EXPERIMENT_PROTOCOL.md#module-map)
+and [configuration guide](docs/EXPERIMENT_PROTOCOL.md#configuration-files).
+
+Run from the repository root with the pinned dependencies installed. Use a fresh
+output directory for each command:
+
+```sh
+# Real Banking tools/scorer with scripted agents and injection; no LLM.
+uv run python scripts/run_phase1_example.py --condition full_restart --output runs/minimal-new
+
+# Five scripted Phase 1 conditions and CSV summaries; no LLM.
+uv run python scripts/run_experiment_batch.py --config configs/d_phase1_smoke.json --output runs/batch-new
+
+# Selective recovery algorithm with synthetic DAG/state adapters; no LLM.
+uv run python scripts/run_selective_mock.py --scenario dag --output runs/selective-new
 ```
 
-Use a fresh output directory. Mock outputs are software-test fixtures, not model results.
+These are software-validation examples, not model-performance results. The Banking
+verifier fixture is pass-through; the real B/C verification workflow is pending.
+D has two supported integration paths within one framework: Phase 1 factories and
+Phase 2 selective recovery. See [the recovery migration notes](docs/RECOVERY_MIGRATION.md)
+and [the measurement guide](docs/MEASUREMENT_GUIDE.md).
 
 ## Environment (short)
 
@@ -191,13 +216,3 @@ Every row (and about 60 more corner cases) is a test in `tests/`.
 - Free text inside an allowed payment (its subject) is not inspected.
 - If an evaluation reports `warnings` (wrong starting state, log lines from another task, a crashing check), the
   experiment harness was misused and the result should not be reported.
-
-## Minimum Phase 1 integration
-
-Start with [PHASE1_INTEGRATION.md](PHASE1_INTEGRATION.md). The factory-based runner creates a new environment and agent session for full restart; stage checkpoints are optional.
-
-```sh
-uv run python scripts/run_phase1_example.py --condition full_restart --output runs/minimal-restart
-```
-
-This example uses real Banking tools/scoring and scripted agents/injection, not a model experiment. See [capability status](docs/PHASE1_CAPABILITIES.md) and [optional advanced recovery](docs/ADVANCED_RECOVERY.md).

@@ -51,6 +51,7 @@ def fingerprint(value: Any) -> str:
 class Record:
     run_id: str
     schema_version: str = SCHEMA_VERSION
+    execution_segment_id: str | None = None
 
     def __post_init__(self):
         identifier(self.run_id)

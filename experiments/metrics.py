@@ -71,20 +71,21 @@ def summarize_run(directory, *, write=True):
     history = histories[-1] if histories else None
     recoveries = [e for e in events if e["event_type"] == "recovery_started"]
     recovery_ends = [e for e in events if e["event_type"] == "recovery_finished"]
-    restarted = {e["data"]["new_attempt_id"] for e in recoveries}
-    recovery_events = [e for e in events if e["attempt_id"] in restarted]
+    restarted = {e["data"]["new_attempt_id"] for e in recoveries if "new_attempt_id" in e["data"]}
+    boundary = recoveries[0]["event_seq"] if recoveries else float("inf")
+    recovery_events = [e for e in events if e["event_seq"] > boundary]
     nodes = [e for e in events if e["event_type"] == "node_started"]
-    initial_nodes = {e["node_id"] for e in nodes if e["attempt_id"] not in restarted}
-    repeated = [e for e in nodes if e["attempt_id"] in restarted and e["node_id"] in initial_nodes]
+    initial_nodes = {e["node_id"] for e in nodes if e["event_seq"] < boundary}
+    repeated = [e for e in nodes if e["event_seq"] > boundary and e["node_id"] in initial_nodes]
     validity = {}
     for ev in evaluations:
         validity.update(ev["work_validity"])
     invalid_ids = {k for k, v in validity.items() if v == "invalid"}
-    valid_old_nodes = {e["node_id"] for e in nodes if e["attempt_id"] not in restarted
+    valid_old_nodes = {e["node_id"] for e in nodes if e["event_seq"] < boundary
                        and validity.get(e["node_execution_id"]) == "valid"}
     judged_nodes = sum(validity.get(e["node_execution_id"]) in {"valid", "invalid"} for e in nodes)
     validity_complete = bool(nodes) and judged_nodes == len(nodes)
-    old_nodes = [e for e in nodes if e["attempt_id"] not in restarted]
+    old_nodes = [e for e in nodes if e["event_seq"] < boundary]
     old_validity_complete = bool(old_nodes) and all(
         validity.get(e["node_execution_id"]) in {"valid", "invalid"} for e in old_nodes)
     propagation = [{**p, "attempt_id": ev["attempt_id"], "evaluation_id": ev["evaluation_id"]}
@@ -96,16 +97,20 @@ def summarize_run(directory, *, write=True):
     finished = [e for e in events if e["event_type"] == "run_finished"]
     def safety(key):
         return len(set(history[key])) if history and history[key] is not None else None
+    initial_eval = next((e for e in evaluations if e["scope"] == "attempt"), {})
+    def purpose_cost(purpose):
+        selected = {e["step_id"] for e in events if e["event_type"] == "model_started" and e["data"].get("purpose") == purpose}
+        return _cost([e for e in events if e["step_id"] in selected])
     summary = {
         "schema_version": SCHEMA_VERSION, "run_id": manifest["run_id"],
         "synthetic": manifest.get("synthetic", False), "condition": manifest.get("condition"),
-        "initial_agentdojo_utility": attempt_evals.get(attempts[0], {}).get("agentdojo_utility") if attempts else None,
-        "initial_strict_success": attempt_evals.get(attempts[0], {}).get("strict_success") if attempts else None,
+        "initial_agentdojo_utility": initial_eval.get("agentdojo_utility"),
+        "initial_strict_success": initial_eval.get("strict_success"),
         "final_agentdojo_utility": attempt_evals.get(attempts[-1], {}).get("agentdojo_utility") if attempts else None,
         "final_strict_success": attempt_evals.get(attempts[-1], {}).get("strict_success") if attempts else None,
         "permission_violations": history.get("permission_violations") if history else None,
         "cross_attempt_repeats": history.get("details", {}).get("cross_attempt_repeats", {"status": "not_evaluated", "actions": None}) if history else {"status": "not_evaluated", "actions": None},
-        "initial_task_success": attempt_evals.get(attempts[0], {}).get("task_success") if attempts else None,
+        "initial_task_success": initial_eval.get("task_success"),
         "final_task_success": attempt_evals.get(attempts[-1], {}).get("task_success") if attempts else None,
         "injection_triggered": any(e["data"].get("triggered") for e in injection) if injection else None,
         "downstream_exposed": any(e["data"].get("delivered") for e in exposure) if exposure else None,
@@ -142,13 +147,53 @@ def summarize_run(directory, *, write=True):
                       "latency_ms": next((e["duration_ms"] for e in reversed(events)
                           if e["attempt_id"] == a and e["event_type"] == "attempt_finished"), None),
                       "cost": _cost([e for e in events if e["attempt_id"] == a])} for a in attempts],
+        "verification_cost": purpose_cost("verifier"), "retry_cost": purpose_cost("retry"),
+        "retained_artifacts": len({e["data"]["artifact_id"] for e in events if e["event_type"] == "artifact_retained"}),
+        "reused_artifacts": len({e["data"]["artifact_id"] for e in events if e["event_type"] == "artifact_reused"}),
+        "reuse_check_ms": sum(e["duration_ms"] or 0 for e in events if e["event_type"] == "reuse_checked"),
+        "recovery_planning_ms": sum(e["duration_ms"] or 0 for e in events if e["event_type"] == "recovery_planned"),
+        "effective_retained_artifacts": len(recovery_ends[-1]["data"].get("retained_artifact_ids", [])) if recovery_ends and recovery_ends[-1]["data"].get("completed") else None,
+        "effective_reused_artifacts": len(recovery_ends[-1]["data"].get("reused_artifact_ids", [])) if recovery_ends and recovery_ends[-1]["data"].get("completed") else None,
+        "requested_strategy": recoveries[-1]["data"].get("requested_strategy", "full_restart") if recoveries else None,
+        "executed_strategy": recovery_ends[-1]["data"].get("executed_strategy", "full_restart") if recovery_ends else None,
+        "fallback_reason": recovery_ends[-1]["data"].get("fallback_reason") if recovery_ends else None,
+        "unresolved_effects": recovery_ends[-1]["data"].get("unresolved_effects") if recovery_ends else None,
+        "execution_errors": [e["data"] for e in events if e["event_type"] in {"workflow_failed", "attempt_failed", "recovery_error"}],
+        "budget_exhausted": any(e["event_type"] == "budget_exhausted" or "BudgetExceeded" in str(e["data"].get("error", "")) for e in events),
         "trace_issues": problems,
         "trace_complete": bool(finished) and not active and not problems,
     }
+    # Optional Phase 2 fields only; Phase 1 summary schema remains unchanged.
+    if recovery_ends and "checkpoint_attempts" in recovery_ends[-1]["data"]:
+        detail = recovery_ends[-1]["data"]
+        summary["recovery_policy"] = detail.get("recovery_policy")
+        summary["checkpoint_retry_attempts"] = sum(
+            e["event_type"] == "checkpoint_attempt_started" and e["data"].get("retry_index", 0) > 0
+            for e in events)
+        summary["older_checkpoint_transitions"] = sum(
+            e["event_type"] == "checkpoint_older_selected" for e in events)
+        summary["recovery_path"] = [dict(event_type=e["event_type"],
+            attempt_id=e["attempt_id"], execution_segment_id=e.get("execution_segment_id"),
+            **e["data"]) for e in events if e["event_type"] in {
+                "checkpoint_attempt_started", "checkpoint_attempt_failed",
+                "checkpoint_attempt_succeeded", "checkpoint_older_selected", "recovery_fallback"}]
+
+        summary.update({key: detail[key] for key in
+                        ("checkpoint_attempts", "checkpoint_retry_count", "checkpoint_id")})
+        retry_segments = {e["execution_segment_id"] for e in events
+                          if e["event_type"] == "checkpoint_attempt_started"
+                          and e["data"]["retry_index"] > 0}
+        summary["checkpoint_retry_cost"] = _cost([
+            e for e in events if e.get("execution_segment_id") in retry_segments])
     if recoveries and (not recovery_ends or not recovery_ends[-1]["data"]["completed"]):
         summary["final_task_success"] = None
         summary["final_agentdojo_utility"] = None
         summary["final_strict_success"] = None
+    summary["measurements"] = {
+        "recovery_latency_ms": {"status": "measured" if recovery_ends else "error" if recoveries else "not_applicable", "value": summary["recovery_latency_ms"]},
+        "affected_nodes": {"status": "measured" if propagation else "not_evaluated", "value": summary["observed_affected_nodes"]},
+        "invalid_work": {"status": "measured" if validity_complete else "not_evaluated", "value": summary["invalid_path_cost"]},
+    }
     if write:
         atomic_json(directory / "summary.json", summary)
     return summary

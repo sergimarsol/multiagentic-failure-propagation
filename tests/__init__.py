@@ -1,1 +1,1 @@
-"""Project-local test helpers and integration tests."""
+"""Repository tests and shared test helpers."""
