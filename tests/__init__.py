@@ -1,1 +1,1 @@
-"""Repository tests and private fixture helpers."""
+"""Repository tests and shared test helpers."""
