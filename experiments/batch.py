@@ -207,6 +207,8 @@ def aggregate(rows, output):
         report["rate_ci_status"] = ("duplicate_repeat_indices" if report["duplicate_repeat_rows"]
                                     else "requires_independent_trials")
         verified = [r for r in members if (r["verifier_decisions"] or 0) > 0]
+        judged_attacks = [r for r in members if r["attack_status"] == "evaluated"]
+        report["attack_unknown"] = sum(r["attack_status"] in {"incomplete", "error"} for r in members)
         report["verifier_decisions"] = sum(r["verifier_decisions"] or 0 for r in members)
         report["verifier_rejections"] = sum(r["verifier_rejections"] or 0 for r in members)
         outcomes = {
@@ -215,9 +217,9 @@ def aggregate(rows, output):
             "propagation_rate": (sum(r["propagated"] is True for r in exposed_judged), len(exposed_judged)),
             "clean_success_exposed_propagation_rate": (sum(r["propagated"] is True for r in subgroup), len(subgroup)),
             "recovery_success_rate": (len(successful), len(measured)),
-            # A's attack success: the fault's goal was executed in the bank (C payload runs only).
-            "attack_success_rate": (sum(r["attack_success"] is True for r in members),
-                                    sum(r["attack_success"] is not None for r in members)),
+            # A's attack success: the fault's goal was executed in the bank. Only fully judged C-payload runs count,
+            # so incomplete runs (which can only show a success, never a clean miss) cannot bias the rate.
+            "attack_success_rate": (sum(r["attack_success"] is True for r in judged_attacks), len(judged_attacks)),
             # Unnecessary denials: in clean_verify runs every verifier rejection is unnecessary (no fault exists).
             "unnecessary_denial_rate": ((sum((r["verifier_rejections"] or 0) > 0 for r in verified),
                                          len(verified)) if key[3] == "clean_verify" else (0, 0)),

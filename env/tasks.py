@@ -97,16 +97,19 @@ class InjectableField:
     location: str
 
 
+RECORD_FIELDS = ("recipient", "amount", "subject", "date", "recurring")
+
+
 @dataclasses.dataclass(frozen=True)
 class AttackGoal:
-    """What a fault tries to make happen: reached when an executed write matches any spec in `any_of`."""
+    """What a fault tries to make happen: a bank record (transaction or scheduled transaction) in this shape."""
     name: str
     description: str
     payloads: tuple[str, ...]  # ids in faults/payloads.yaml that aim at this goal
-    any_of: tuple[WriteSpec, ...]
+    record: dict[str, dict[str, Any]]  # field -> predicate, as in allowed_writes
 
-    def matches(self, tool: str, args: Any) -> bool:
-        return isinstance(args, dict) and any(s.tool == tool and s.matches(args) for s in self.any_of)
+    def matches_record(self, rec: Any) -> bool:
+        return isinstance(rec, dict) and all(k in rec and check_predicate(p, rec[k]) for k, p in self.record.items())
 
 
 @dataclasses.dataclass(frozen=True)
@@ -143,6 +146,13 @@ class TaskConfig:
                        f"goals: {[g.name for g in self.attack_goals]}")
 
 
+def _check_predicates(task_id: str, match: dict[str, Any]) -> None:
+    for pred in match.values():
+        if not isinstance(pred, dict) or len(pred) != (2 if "approx" in pred else 1) or not set(pred) & set(PREDICATES) \
+                or ("approx" in pred and "tol" not in pred):
+            raise ValueError(f"{task_id}: invalid predicate {pred}; use one of {PREDICATES} (approx needs tol)")
+
+
 def _tool_params(tool: str) -> set[str]:
     fn = next(f for f in get_banking_suite().tools if f.name == tool)
     return set(fn.parameters.model_json_schema()["properties"])
@@ -155,9 +165,7 @@ def _write_spec(task_id: str, w: dict[str, Any]) -> WriteSpec:
         raise ValueError(f"{task_id}: {w['tool']} spec needs a non-empty match")
     if unknown := set(w["match"]) - _tool_params(w["tool"]):
         raise ValueError(f"{task_id}: {w['tool']} has no argument(s) {sorted(unknown)}")
-    for pred in w["match"].values():
-        if len(pred) != (2 if "approx" in pred else 1) or not set(pred) & set(PREDICATES) or ("approx" in pred and "tol" not in pred):
-            raise ValueError(f"{task_id}: invalid predicate {pred}; use one of {PREDICATES} (approx needs tol)")
+    _check_predicates(task_id, w["match"])
     return WriteSpec(w["tool"], dict(w["match"]), int(w.get("max_count", 1)))
 
 
@@ -186,11 +194,15 @@ def _parse(task_id: str, raw: dict[str, Any]) -> TaskConfig:
     for g in raw.get("attack_goals", []):
         if not isinstance(g, dict) or not isinstance(g.get("name"), str) or not isinstance(g.get("payloads"), list):
             raise ValueError(f"{task_id}: each attack goal needs a name and a payloads list")
-        payloads = tuple(g["payloads"])
-        if not g.get("any_of") or not payloads or g["name"] in seen or set(payloads) & seen or len(set(payloads)) != len(payloads):
-            raise ValueError(f"{task_id}: attack goal {g.get('name')!r} needs any_of, payloads, and names/payload ids used once")
+        payloads, record = tuple(g["payloads"]), g.get("record")
+        if not record or not isinstance(record, dict) or not payloads or g["name"] in seen or set(payloads) & seen \
+                or len(set(payloads)) != len(payloads):
+            raise ValueError(f"{task_id}: attack goal {g.get('name')!r} needs a record, payloads, and names/payload ids used once")
+        if unknown := set(record) - set(RECORD_FIELDS):
+            raise ValueError(f"{task_id}: attack goal {g['name']!r}: records have no field(s) {sorted(unknown)}")
+        _check_predicates(task_id, record)
         seen |= {g["name"], *payloads}
-        goals.append(AttackGoal(g["name"], g.get("description", ""), payloads, tuple(_write_spec(task_id, s) for s in g["any_of"])))
+        goals.append(AttackGoal(g["name"], g.get("description", ""), payloads, dict(record)))
     return TaskConfig(
         task_id=task_id,
         suite=raw["suite"],

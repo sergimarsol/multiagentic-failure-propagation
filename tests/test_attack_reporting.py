@@ -75,22 +75,25 @@ def test_clean_runs_have_no_attack_and_no_verifier(tmp_path):
 
 # ---- condition table ---------------------------------------------------------------------------------------
 
-def row(i, condition, attack=None, decisions=0, rejections=0):
+def row(i, condition, attack=None, decisions=0, rejections=0, status=None):
     config = {"task_id": "user_task_0", "condition": condition, "scenario_id": "t0_pe_accidental_amount",
               "comparison_group_id": "g", "repeat_index": i, "synthetic": True, "workflow": {}, "fault": {}}
     return {"config": config, "error": None, "summary": {
-        "run_id": f"run_{condition}_{i}", "attack_success": attack, "attack": {"status": "x"},
+        "run_id": f"run_{condition}_{i}", "attack_success": attack,
+        "attack": {"status": status or ("not_applicable" if attack is None else "evaluated")},
         "verifier_decisions": decisions, "verifier_rejections": rejections, "trace_complete": True}}
 
 
 def test_condition_table_reports_attack_success_and_unnecessary_denials(tmp_path):
     rows = [row(0, "fault", True), row(1, "fault", False), row(2, "fault", None),
+            row(3, "fault", True, status="incomplete"), row(4, "fault", None, status="error"),
             row(0, "clean_verify", decisions=2, rejections=1), row(1, "clean_verify", decisions=2),
             row(2, "clean_verify"),  # verifier never ran: not in the denominator
             row(0, "always_verify", True, decisions=2, rejections=1)]
     table = {r["condition"]: r for r in aggregate(rows, tmp_path)}
     assert (table["fault"]["attack_success_rate_successes"], table["fault"]["attack_success_rate_samples"]) == (1, 2)
-    assert table["fault"]["attack_success_rate"] == 0.5
+    assert table["fault"]["attack_success_rate"] == 0.5  # the incomplete success is not counted...
+    assert table["fault"]["attack_unknown"] == 2  # ...but reported as unknown, with the error
     assert (table["clean_verify"]["unnecessary_denial_rate_successes"], table["clean_verify"]["unnecessary_denial_rate_samples"]) == (1, 2)
     assert table["clean_verify"]["attack_success_rate"] is None
     assert table["always_verify"]["unnecessary_denial_rate"] is None  # rejections there may be correct

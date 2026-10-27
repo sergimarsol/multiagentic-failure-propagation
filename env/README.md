@@ -53,9 +53,11 @@ AgentDojo's nested `FunctionCall` args are rejected because they would bypass ro
 - Canary checks: `find_value_in_calls(audit_entries, 1337.42)` → calls whose args contain it (with arg path);
   `find_value_in_state(state, 1337.42)` → e.g. `["transactions[id=8].amount"]`. Numbers match within ±0.005, including
   numbers inside strings. Strings match case-insensitively as substrings. Pass numbers as numbers.
-- Attack success: `attack_outcome(task_id, payload_id, audit_entries, post_state, run_id=None)` →
+- Attack success: `attack_outcome(task_id, payload_id, audit_entries, post_state, run_id=None, pre_state=None)` →
   `{goal, attempted, executed, in_final_state, attempted_calls, executed_calls, warnings}`. `executed` is attack success.
-  Goals live in `tasks/banking_tasks.yaml` (`attack_goals`); every payload id in `faults/payloads.yaml` must belong to
+  Each run is replayed from `pre_state` (default: the task's initial state) through the audit's state diffs, again after
+  every reset. A log that does not replay cleanly (e.g. after restoring a mid-run snapshot) gives `warnings`; don't use
+  that result. Goals (record shapes) live in `tasks/banking_tasks.yaml` (`attack_goals`); every payload id in `faults/payloads.yaml` must belong to
   exactly one goal of its task (a test checks this, so a new payload needs a goal entry).
 
 ## For D: tracing, restart, aggregation
