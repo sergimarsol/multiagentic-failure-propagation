@@ -99,7 +99,10 @@ def summarize_run(directory, *, write=True):
         return len(set(history[key])) if history and history[key] is not None else None
     initial_eval = next((e for e in evaluations if e["scope"] == "attempt"), {})
     def purpose_cost(purpose):
-        selected = {e["step_id"] for e in events if e["event_type"] == "model_started" and e["data"].get("purpose") == purpose}
+        selected = {e["step_id"] for e in events
+                    if (e["event_type"] == "model_started" and e["data"].get("purpose") == purpose)
+                    or (purpose == "verifier" and e["event_type"] == "tool_started"
+                        and e["data"].get("role") == "verifier")}
         return _cost([e for e in events if e["step_id"] in selected])
     summary = {
         "schema_version": SCHEMA_VERSION, "run_id": manifest["run_id"],
@@ -110,6 +113,13 @@ def summarize_run(directory, *, write=True):
         "final_strict_success": attempt_evals.get(attempts[-1], {}).get("strict_success") if attempts else None,
         "permission_violations": history.get("permission_violations") if history else None,
         "cross_attempt_repeats": history.get("details", {}).get("cross_attempt_repeats", {"status": "not_evaluated", "actions": None}) if history else {"status": "not_evaluated", "actions": None},
+        "initial_workflow_completed": next((e["data"].get("completed") for e in events
+            if e["event_type"] == "attempt_finished"), None),
+        "final_workflow_completed": next((e["data"].get("completed") for e in reversed(events)
+            if e["event_type"] == "attempt_finished" and attempts and e["attempt_id"] == attempts[-1]), None),
+        "budget": finished[-1]["data"].get("budget") if finished else None,
+        "initial_state_hash": next((e["data"].get("initial_state_fingerprint") for e in events
+            if e["event_type"] == "environment_initialized"), None),
         "initial_task_success": initial_eval.get("task_success"),
         "final_task_success": attempt_evals.get(attempts[-1], {}).get("task_success") if attempts else None,
         "injection_triggered": any(e["data"].get("triggered") for e in injection) if injection else None,

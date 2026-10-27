@@ -14,7 +14,7 @@ No B/C implementation or A business rules were changed for this work.
 | Recorder, artifacts, cost, optional segments | Implemented | Banking fixtures and toy tests; legacy logs readable |
 | Clean verification condition and verifier cost | Recording implemented | D fixture is pass-through; B verifier implementation and initial results are documented separately |
 | Shared run budget | Cooperative admission implemented | Fixture tests; hard provider cancellation pending B |
-| Config/matrix/batch/CSV | Implemented | Fixture tests; real model matrix not run |
+| Config/matrix/batch/CSV | Implemented; optional D/B configured entry point | B real session with scripted client; new entry point not yet tested with model inference |
 | Repeated-run variation and rate intervals | Implemented; explicit sample counts and missing values | Numerical regressions; no real model variability measured |
 | Cross-attempt repeat adapter | Lazy wrapper for A's helper | A helper now merged; Phase 1 integration supplied by main |
 | Within-segment vs recovery action grouping | Opt-in segment audit IDs and effective-path selection implemented | Real Banking scripted regression tests; real-model Phase 2 integration pending |
@@ -48,3 +48,11 @@ Tests establish software behavior, not model recovery rates or universal securit
 A's helper and B's Phase 1 workflow are now included from main. C semantic
 judgments and B's Phase 2 advanced workflow remain integration dependencies. Provider cancellation and an
 end-to-end tracking-overhead experiment are not claimed by these tests.
+
+## D/B configured Phase 1 entry point
+
+See [WORKFLOW_EXPERIMENTS.md](WORKFLOW_EXPERIMENTS.md) for shared trial budgets,
+resolved model/session controls and read-only summary import. Scripted-client tests
+use B's actual session and A's simulator/scorer. Old B commands remain unchanged.
+Real inference through the new configured entry point remains pending; C semantic
+annotations and any Phase 2 workflow integration remain separate.

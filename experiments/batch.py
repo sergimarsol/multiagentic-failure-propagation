@@ -24,7 +24,14 @@ def run_batch(configs, output, execute):
             summary = execute(config, directory)
             row = {"config": config, "summary": summary, "error": None}
         except Exception as exc:
-            row = {"config": config, "summary": {}, "error": f"{type(exc).__name__}: {exc}"}
+            summary = {}
+            if (directory / "manifest.json").exists():
+                try:
+                    from .metrics import summarize_run
+                    summary = summarize_run(directory, write=False)
+                except (ValueError, OSError):
+                    pass
+            row = {"config": config, "summary": summary, "error": f"{type(exc).__name__}: {exc}"}
         rows.append(row)
         atomic_json(output / f"result_{index:04d}.json", row)
     aggregate(rows, output)
@@ -56,7 +63,7 @@ RECOVERY_METRICS = (
     "checkpoint_restore_ms", "checkpoint_bytes", "reuse_check_ms", "recovery_planning_ms",
     "recording_overhead_ms",
 )
-COST_SCOPES = ("recovery_added_cost", "checkpoint_retry_cost", "verification_cost")
+COST_SCOPES = ("recovery_added_cost", "checkpoint_retry_cost", "verification_cost", "retry_cost")
 COST_FIELDS = ("model_calls", "tool_calls", "input_tokens", "output_tokens")
 
 
@@ -85,16 +92,25 @@ def _recovery_columns(config, summary):
 def aggregate(rows, output):
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
+    run_ids = [r["summary"].get("run_id") for r in rows if r["summary"].get("run_id")]
+    if len(run_ids) != len(set(run_ids)):
+        raise ValueError("duplicate source run_id; refusing to count a run twice")
     # Multiple/missing clean matches are unknown, never selected arbitrarily.
     clean = defaultdict(list)
     for row in rows:
         c = row["config"]
         if c["condition"] == "clean":
-            clean[_clean_pair_key(c)].append(row["summary"].get("final_agentdojo_utility"))
+            clean[_clean_pair_key(c)].append(row)
     flattened = []
     for row in rows:
         c, s = row["config"], row["summary"]
         paired = clean[_clean_pair_key(c)]
+        state_matches = len(paired) == 1 and (
+            paired[0]["summary"].get("initial_state_hash") == s.get("initial_state_hash"))
+        pair_status = ("missing_or_mismatched_controls" if not paired else "ambiguous" if len(paired) != 1
+                       else "state_mismatch" if not state_matches
+                       else "incomplete_clean" if paired[0]["error"] or paired[0]["summary"].get("trace_complete") is False
+                       else "matched")
         propagation = s.get("propagation", [])
         labels = {p.get("label") for p in propagation}
         affected = bool(labels & {"propagated_to_plan", "attempted_incorrect_action", "executed_incorrect_action"})
@@ -109,7 +125,15 @@ def aggregate(rows, output):
             completion=s.get("final_agentdojo_utility"), strict_success=s.get("final_strict_success"),
             triggered=s.get("injection_triggered"), exposed=s.get("downstream_exposed"),
             propagated=affected if judged else None,
-            clean_pair_success=paired[0] if len(paired) == 1 else None,
+            clean_pair_status=pair_status,
+            clean_pair_success=paired[0]["summary"].get("final_agentdojo_utility") if pair_status == "matched" else None,
+            initial_completion=s.get("initial_agentdojo_utility"),
+            initial_strict_success=s.get("initial_strict_success"),
+            initial_workflow_completed=s.get("initial_workflow_completed"),
+            final_workflow_completed=s.get("final_workflow_completed"),
+            permission_violations=json.dumps(s.get("permission_violations")),
+            budget=json.dumps(s.get("budget")),
+            payload_fixture=c.get("fault", {}).get("fixture"),
             execution_failed=bool(row["error"] or s.get("execution_errors")),
             evaluation_unknown=s.get("final_agentdojo_utility") is None,
             budget_exhausted=s.get("budget_exhausted", False),
