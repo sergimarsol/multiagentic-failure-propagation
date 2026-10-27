@@ -1,6 +1,7 @@
 # Progress
 
-Last update: 2026-10-23. Covers the environment and evaluation part. The tracing/restart (D) and agent workflow (B) parts are merged into `main` too; the injection harness (C) is not in the repo yet.
+Last update: 2026-10-27. Covers the environment and evaluation part. All four parts are merged into `main`
+(environment/evaluation, B workflow, C injection harness, D experiment infrastructure); there are no open PRs.
 
 ## What exists
 
@@ -8,10 +9,10 @@ Last update: 2026-10-23. Covers the environment and evaluation part. The tracing
 |---|---|---|
 | Pinned setup | `pyproject.toml`, `uv.lock`, `env/PINS.md` | agentdojo 0.1.35, benchmark v1.2.2, deps ≥ 2 weeks old; tested on Python 3.10 and 3.12 |
 | Environment | `env/banking_env.py`, `env/roles.yaml` | `BankingEnv`: load/reset/snapshot/restore, role-checked `call_tool`, `tool_schemas(role)`, append-only audit log |
-| Task configs | `tasks/banking_tasks.yaml` | user_task_0 (pay bill), user_task_2 (adjust rent): critical facts, allowed actions, injectable fields |
-| Evaluation | `eval/scoring.py` | `evaluate`, `evaluate_restart`, `cross_attempt_repeats`, `find_value_in_calls` / `find_value_in_state` |
+| Task configs | `tasks/banking_tasks.yaml` | user_task_0 (pay bill), user_task_2 (adjust rent): critical facts, allowed actions, injectable fields, attack goals |
+| Evaluation | `eval/scoring.py` | `evaluate`, `evaluate_restart`, `cross_attempt_repeats`, `attack_outcome`, `find_value_in_calls` / `find_value_in_state` |
 | Scripted runs | `scripts/replay_ground_truth.py` | no-LLM reference run per task; `replay(..., overrides=, extra_calls=)` fakes faulty runs |
-| Tests | `tests/` | 108 tests, including every evaluation corner case and the fixes from an adversarial review of the scorer |
+| Tests | `tests/` | 582 tests for the whole repo; the scorer has every corner case plus fixes from two adversarial reviews |
 | Docs | `README.md` (evaluation rules), `env/README.md` (API), `docs/banking_audit.md` (all 16 tasks) | |
 
 Start here: `uv sync && uv run pytest && uv run python scripts/replay_ground_truth.py`. Both tasks should be strictly successful.
@@ -19,8 +20,12 @@ Start here: `uv sync && uv run pytest && uv run python scripts/replay_ground_tru
 ## How to use it from your part
 
 - **Workflow:** `env.call_tool(role, tool, args, run_id, step_id)`, `env.tool_schemas(role)`, `env.prompt`. Give the model `result_text`.
-- **Injection:** `get_task_config(t).injectable_fields`, `replay(t, overrides=...)` / `extra_calls=[...]` to test before the LLM workflow exists, and `find_value_*` for canaries.
+- **Injection:** `get_task_config(t).injectable_fields`, `replay(t, overrides=...)` / `extra_calls=[...]` to test before
+  the LLM workflow exists, and `find_value_*` for canaries. **A new payload in `faults/payloads.yaml` needs its id added to
+  an attack goal in `tasks/banking_tasks.yaml`** (a test fails otherwise).
 - **Tracing / restart:** the audit log JSONL (schema in `env/README.md`), `env.reset()` (never clears the log), `evaluate_restart(...)` (shared env) or `evaluate` per attempt + `cross_attempt_repeats(...)` (fresh env per attempt).
+- **Results:** run summaries and `condition_summary.csv` now include `attack_success` / `attack_success_rate` and
+  `verifier_rejections` / `unnecessary_denial_rate` (see `docs/MEASUREMENT_GUIDE.md`, "Security and utility together").
 
 ## Decisions taken (details in README "Evaluation")
 
@@ -31,6 +36,10 @@ Start here: `uv sync && uv run pytest && uv run python scripts/replay_ground_tru
 5. The executor has no read tools, so facts must flow researcher → planner → executor.
 6. A payment's subject and date are not checked.
 7. Amounts are compared exactly (like AgentDojo) and IBANs ignore case only. A tolerance would have let wrong amounts like 98.704 count as authorized.
+8. We report four numbers per condition (from the agent security lecture): clean utility, utility under attack,
+   attack success rate and unnecessary denials. Strict success stays the main correctness measure.
+9. Attack success = the fault's goal actually executed in the bank, counted even if a restart undid it. Goals are a bit
+   broader than the exact injected call (any positive amount to the attacker, or the corrupted amount via any money tool).
 
 ## Things to know
 
@@ -38,10 +47,11 @@ Start here: `uv sync && uv run pytest && uv run python scripts/replay_ground_tru
 - AgentDojo's utilities for user_task_5 and user_task_6 pass with no action. Don't use those tasks without our strict checks.
 - `send_money` never changes the balance, and `update_*` tools ignore `0` / `False` / `""`.
 - Import AgentDojo only via `env/_agentdojo.py` (upstream circular import).
+- Attack success is only judged for runs injected from `faults/payloads.yaml`. Runs using B's fixture payloads show
+  `not_applicable`, so use C's payloads for the reported experiments.
 
 ## Next
 
-- Workflow part: check that `tool_schemas` works with the local model's tool-call format.
-- Agree on message and trace formats before integrating.
-- More tasks are config-only. Candidates: 3, 4, 13, 15 (15 has independent branches, useful for Phase 2).
-- Always-verify condition: confirm the scoring stays LLM-free.
+- Team: lock one commit, model configuration and scope, run one scenario across all conditions, then the repeats.
+- Later, if wanted: tampered external file (end-to-end injection through `read_file`); a code-only argument check as a
+  Phase 2 recovery condition; segment-aware scoring once D adds segment ids; more tasks (3, 4, 13, 15) via config.
