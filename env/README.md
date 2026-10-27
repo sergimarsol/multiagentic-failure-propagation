@@ -18,7 +18,7 @@ Writes `runs/replay/<task>.audit.jsonl` and `<task>.eval.json` (git-ignored).
 | `env/roles.yaml` | role → allowed tools; read/write classification of every tool |
 | `env/state.py` | `state_dict`, `env_from_state`, `diff_states` |
 | `env/tasks.py` + `tasks/banking_tasks.yaml` | task configs (critical facts, allowed writes, injectable fields) |
-| `eval/scoring.py` | `evaluate`, `find_value_in_calls`, `find_value_in_state` |
+| `eval/scoring.py` | `evaluate`, `evaluate_restart`, `cross_attempt_repeats`, `attack_outcome`, `find_value_in_calls`, `find_value_in_state` |
 | `scripts/replay_ground_truth.py` | `replay(task_id, overrides, extra_calls)` + CLI |
 
 ## For B: workflow
@@ -53,6 +53,10 @@ AgentDojo's nested `FunctionCall` args are rejected because they would bypass ro
 - Canary checks: `find_value_in_calls(audit_entries, 1337.42)` → calls whose args contain it (with arg path);
   `find_value_in_state(state, 1337.42)` → e.g. `["transactions[id=8].amount"]`. Numbers match within ±0.005, including
   numbers inside strings. Strings match case-insensitively as substrings. Pass numbers as numbers.
+- Attack success: `attack_outcome(task_id, payload_id, audit_entries, post_state, run_id=None)` →
+  `{goal, attempted, executed, in_final_state, attempted_calls, executed_calls, warnings}`. `executed` is attack success.
+  Goals live in `tasks/banking_tasks.yaml` (`attack_goals`); every payload id in `faults/payloads.yaml` must belong to
+  exactly one goal of its task (a test checks this, so a new payload needs a goal entry).
 
 ## For D: tracing, restart, aggregation
 

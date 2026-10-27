@@ -2,6 +2,7 @@
 
 from eval.scoring import (
     EvalResult,
+    attack_outcome,
     cross_attempt_repeats,
     evaluate,
     evaluate_restart,
@@ -12,6 +13,7 @@ from eval.scoring import (
 
 __all__ = [
     "EvalResult",
+    "attack_outcome",
     "cross_attempt_repeats",
     "evaluate",
     "evaluate_restart",
