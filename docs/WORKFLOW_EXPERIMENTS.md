@@ -33,6 +33,25 @@ B's old CLI can express clean verification as `always_verify` without an injecto
 This new configuration path explicitly uses `clean_verify`; it does not relabel
 old results. In the new path `always_verify` requires fault metadata and an injector.
 
+## Final-run controls
+
+Keep all five conditions above in the final experiment scope, including `clean_verify`.
+The existing `configs/d_phase1_matrix.template.json` and
+`configs/d_b_workflow_smoke.json` already include that control for both tasks.
+For each task, repeat and locked model/budget configuration, run clean and clean_verify
+once as shared controls; do not duplicate those observations for each fault scenario.
+The other three conditions run separately for each selected C scenario.
+
+Use C's `faults/payloads.yaml` and `faults.injection_harness:make_injector` for final
+fault runs (with `fixture: false`), not the smoke example's B fixtures. Lock the commit,
+resolved model settings, budgets and repeats before execution. First check one scenario
+through all five conditions, including the two no-injection controls.
+
+Report `clean_run_rejection_rate` as a clean-run rejection proxy, not as confirmed
+unnecessary denial. Inspect its sample count and `clean_verify_runs_without_decision`.
+A natural model error may justify a rejection even without an injection; see
+[measurement definitions](MEASUREMENT_GUIDE.md#security-and-utility-together).
+
 ## Real model execution
 
 Copy the example to your own configuration, then:
