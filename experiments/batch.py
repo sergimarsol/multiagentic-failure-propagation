@@ -231,10 +231,6 @@ def aggregate(rows, output):
             lower, upper = wilson95(successes, total) if not report["duplicate_repeat_rows"] else (None, None)
             report[rate + "_ci95_lower"] = lower
             report[rate + "_ci95_upper"] = upper
-        # Preserve the legacy numeric columns without claiming adjudicated false rejection.
-        for suffix in ("", "_successes", "_samples", "_ci95_lower", "_ci95_upper"):
-            report["unnecessary_denial_rate" + suffix] = report["clean_run_rejection_rate" + suffix]
-        report["unnecessary_denial_rate_status"] = "deprecated_proxy_use_clean_run_rejection_rate"
         report["false_rejection_status"] = "not_evaluated"
         report["clean_verify_runs_without_decision"] = (
             len(members) - len(verified) if key[3] == "clean_verify" else 0)

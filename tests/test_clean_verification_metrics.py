@@ -32,9 +32,18 @@ def test_rejection_is_not_adjudicated_by_final_utility(tmp_path, success):
     assert report["clean_run_rejection_rate_samples"] == 2
     assert report["clean_verify_runs_without_decision"] == 1
     assert report["false_rejection_status"] == "not_evaluated"
-    assert report["unnecessary_denial_rate_status"] == "deprecated_proxy_use_clean_run_rejection_rate"
-    for suffix in ("", "_successes", "_samples", "_ci95_lower", "_ci95_upper"):
-        assert report["unnecessary_denial_rate" + suffix] == report["clean_run_rejection_rate" + suffix]
+    assert not any(key.startswith("unnecessary_denial_rate") for key in report)
+    lower = report["clean_run_rejection_rate_ci95_lower"]
+    upper = report["clean_run_rejection_rate_ci95_upper"]
+    assert lower == pytest.approx(0.09453120573423074)
+    assert upper == pytest.approx(0.9054687942657693)
+    import csv
+    with (tmp_path / "condition_summary.csv").open() as stream:
+        columns = next(csv.reader(stream))
+    assert "clean_run_rejection_rate_ci95_lower" in columns
+    assert "clean_run_rejection_rate_ci95_upper" in columns
+    assert not any(key.startswith("unnecessary_denial_rate") for key in columns)
+
 
 
 @pytest.mark.parametrize("condition", ["clean", "fault", "always_verify", "full_restart"])

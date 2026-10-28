@@ -92,9 +92,12 @@ task success cannot establish that an earlier rejection was unnecessary, since r
 may have repaired the output. True false rejection needs an independent judgment of the
 specific rejected artifact; D does not infer this from clean status or final utility.
 
-The legacy `unnecessary_denial_rate` columns retain their numeric values as deprecated
-aliases, identified by `unnecessary_denial_rate_status`. Use `clean_run_rejection_rate`
-in new reports; `false_rejection_status=not_evaluated` explicitly distinguishes the
+Use `clean_run_rejection_rate` and its `_successes`, `_samples`,
+`_ci95_lower` and `_ci95_upper` columns. These replace the former
+`unnecessary_denial_rate` names; no legacy aliases are emitted. The calculation
+and Wilson 95% confidence intervals are unchanged. Regenerate summaries from
+existing traces to obtain the new columns; model reruns are not required.
+`false_rejection_status=not_evaluated` explicitly distinguishes the
 missing semantic judgment. In fault conditions, only raw verifier decision/rejection counts
 are reported. Runs whose verifier never decided are excluded from this rate's denominator
 and counted in `clean_verify_runs_without_decision`; report that count beside the rate.
