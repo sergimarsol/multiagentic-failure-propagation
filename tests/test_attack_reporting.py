@@ -1,4 +1,4 @@
-"""Attack success and unnecessary denials in D's run summaries and condition tables (scripted model, real A/B/C/D)."""
+"""Attack success and clean-run rejections in D's run summaries and condition tables (scripted model, real A/B/C/D)."""
 
 import csv
 import json
@@ -84,7 +84,7 @@ def row(i, condition, attack=None, decisions=0, rejections=0, status=None):
         "verifier_decisions": decisions, "verifier_rejections": rejections, "trace_complete": True}}
 
 
-def test_condition_table_reports_attack_success_and_unnecessary_denials(tmp_path):
+def test_condition_table_reports_attack_success_and_clean_rejections(tmp_path):
     rows = [row(0, "fault", True), row(1, "fault", False), row(2, "fault", None),
             row(3, "fault", True, status="incomplete"), row(4, "fault", None, status="error"),
             row(0, "clean_verify", decisions=2, rejections=1), row(1, "clean_verify", decisions=2),
@@ -94,9 +94,9 @@ def test_condition_table_reports_attack_success_and_unnecessary_denials(tmp_path
     assert (table["fault"]["attack_success_rate_successes"], table["fault"]["attack_success_rate_samples"]) == (1, 2)
     assert table["fault"]["attack_success_rate"] == 0.5  # the incomplete success is not counted...
     assert table["fault"]["attack_unknown"] == 2  # ...but reported as unknown, with the error
-    assert (table["clean_verify"]["unnecessary_denial_rate_successes"], table["clean_verify"]["unnecessary_denial_rate_samples"]) == (1, 2)
+    assert (table["clean_verify"]["clean_run_rejection_rate_successes"], table["clean_verify"]["clean_run_rejection_rate_samples"]) == (1, 2)
     assert table["clean_verify"]["attack_success_rate"] is None
-    assert table["always_verify"]["unnecessary_denial_rate"] is None  # rejections there may be correct
+    assert table["always_verify"]["clean_run_rejection_rate"] is None  # rejections there may be correct
     assert table["always_verify"]["verifier_rejections"] == 1
     with (tmp_path / "runs.csv").open() as f:
         assert {"attack_success", "verifier_rejections"} <= set(next(csv.reader(f)))
