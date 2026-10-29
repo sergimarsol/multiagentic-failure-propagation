@@ -47,6 +47,28 @@ fault runs (with `fixture: false`), not the smoke example's B fixtures. Lock the
 resolved model settings, budgets and repeats before execution. First check one scenario
 through all five conditions, including the two no-injection controls.
 
+`scripts/run_phase1_final.py` builds and runs exactly this scope: tasks 0 and 2, C's 10
+scenarios × fault/full_restart/always_verify, plus clean and clean_verify once per task,
+each repeated (default 5 → 170 trials). It refuses a working tree with uncommitted
+changes and records the commit, machine and arguments in `run_info.json`. Each trial
+is its own batch, so the sweep resumes after a stop: finished trials are skipped,
+an interrupted one is kept under `interrupted/` and rerun. All finished trials are
+summarized together in `summary/` (`runs.csv`, `condition_summary.csv`).
+
+```sh
+# 1. pipeline check with no model (seconds)
+uv run python scripts/run_phase1_final.py --scripted --output runs/final-check
+# 2. one scenario through all five conditions with the real model
+uv run python scripts/run_phase1_final.py --smoke --model qwen2.5:7b \
+  --runtime "ollama <version>, qwen2.5:7b <quantization>" --output runs/final-smoke
+# 3. the full sweep (same flags, new output)
+uv run python scripts/run_phase1_final.py --model qwen2.5:7b \
+  --runtime "ollama <version>, qwen2.5:7b <quantization>" --output runs/phase1-final
+```
+
+Use MLX's `--plan-format prompt_only` as in `docs/results.md`. Do not change the model,
+flags or commit midway; a resumed sweep with different settings is refused.
+
 Report `clean_run_rejection_rate` as a clean-run rejection proxy, not as confirmed
 unnecessary denial. Inspect its sample count and `clean_verify_runs_without_decision`.
 A natural model error may justify a rejection even without an injection; see

@@ -242,7 +242,8 @@ Together with the verdicts above, this gives the four numbers to report per cond
 2. **utility under attack:** task success with the fault;
 3. **attack success rate:** share of fully judged fault runs where the fault reached its goal (runs that could not be
    judged are counted separately as `attack_unknown`);
-4. **unnecessary denials:** share of verified clean runs (`clean_verify`) where the verifier rejected something.
+4. **clean-run rejections:** share of verified clean runs (`clean_verify`) where the verifier rejected something
+   (`clean_run_rejection_rate`). A proxy for unnecessary denials: a clean run can still contain real model errors.
 
 Columns and edge cases: [`docs/MEASUREMENT_GUIDE.md`](docs/MEASUREMENT_GUIDE.md#security-and-utility-together).
 

@@ -1,6 +1,6 @@
 # Progress
 
-Last update: 2026-10-27. Covers the environment and evaluation part. All four parts are merged into `main`
+Last update: 2026-10-29. Covers the environment and evaluation part. All four parts are merged into `main`
 (environment/evaluation, B workflow, C injection harness, D experiment infrastructure); there are no open PRs.
 
 ## What exists
@@ -12,7 +12,7 @@ Last update: 2026-10-27. Covers the environment and evaluation part. All four pa
 | Task configs | `tasks/banking_tasks.yaml` | user_task_0 (pay bill), user_task_2 (adjust rent): critical facts, allowed actions, injectable fields, attack goals |
 | Evaluation | `eval/scoring.py` | `evaluate`, `evaluate_restart`, `cross_attempt_repeats`, `attack_outcome`, `find_value_in_calls` / `find_value_in_state` |
 | Scripted runs | `scripts/replay_ground_truth.py` | no-LLM reference run per task; `replay(..., overrides=, extra_calls=)` fakes faulty runs |
-| Tests | `tests/` | 592 tests for the whole repo; the scorer has every corner case plus fixes from three adversarial reviews |
+| Tests | `tests/` | 609 tests for the whole repo; the scorer has every corner case plus fixes from three adversarial reviews |
 | Docs | `README.md` (evaluation rules), `env/README.md` (API), `docs/banking_audit.md` (all 16 tasks) | |
 
 Start here: `uv sync && uv run pytest && uv run python scripts/replay_ground_truth.py`. Both tasks should be strictly successful.
@@ -54,6 +54,8 @@ Start here: `uv sync && uv run pytest && uv run python scripts/replay_ground_tru
 
 ## Next
 
-- Team: lock one commit, model configuration and scope, run one scenario across all conditions, then the repeats.
+- Team: pick the model, then run `scripts/run_phase1_final.py` (`--smoke` first, then the full 170 trials; commands
+  in `docs/WORKFLOW_EXPERIMENTS.md`, "Final-run controls"). Propagation labels come from these same traces.
+- Report: LaTeX skeleton in `report/` (upload the folder to Overleaf).
 - Later, if wanted: tampered external file (end-to-end injection through `read_file`); a code-only argument check as a
   Phase 2 recovery condition; segment-aware scoring once D adds segment ids; more tasks (3, 4, 13, 15) via config.
