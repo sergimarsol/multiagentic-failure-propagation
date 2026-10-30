@@ -56,6 +56,6 @@ Start here: `uv sync && uv run pytest && uv run python scripts/replay_ground_tru
 
 - Team: pick the model, then run `scripts/run_phase1_final.py` (`--smoke` first, then the full 170 trials; commands
   in `docs/WORKFLOW_EXPERIMENTS.md`, "Final-run controls"). Propagation labels come from these same traces.
-- Report: LaTeX skeleton in `report/` (upload the folder to Overleaf).
+- Report: on Overleaf (the shared project), not in this repo.
 - Later, if wanted: tampered external file (end-to-end injection through `read_file`); a code-only argument check as a
   Phase 2 recovery condition; segment-aware scoring once D adds segment ids; more tasks (3, 4, 13, 15) via config.
