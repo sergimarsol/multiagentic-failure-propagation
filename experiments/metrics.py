@@ -30,7 +30,7 @@ def _cost(events):
                                                 if e["duration_ms"] is not None), **usage}
 
 
-def summarize_run(directory, *, write=True):
+def summarize_run(directory, *, write=True, evaluation_overlay=None):
     directory = Path(directory)
     manifest = json.loads((directory / "manifest.json").read_text())
     streams, problems, ids = {}, [], set()
@@ -48,6 +48,40 @@ def summarize_run(directory, *, write=True):
                 raise TraceError(f"invalid {stream} record") from exc
         streams[stream] = rows
     events, evaluations = streams["events"], streams["evaluations"]
+    # Offline judgments supplement unknown work validity without editing source traces.
+    # Stage-only overlays cannot replace A's task/safety scores or existing judgments.
+    if evaluation_overlay is not None:
+        if write:
+            raise ValueError("offline evaluation overlays require write=False")
+        nodes_by_id = {e["node_execution_id"]: e for e in events if e["event_type"] == "node_started"}
+        evidence_ids = {r[k] for stream, k in (("events", "event_id"), ("artifacts", "artifact_id"),
+                         ("evaluations", "evaluation_id")) for r in streams[stream]}
+        existing = {k: v for e in evaluations for k, v in e["work_validity"].items() if v != "unknown"}
+        extra = []
+        for item in evaluation_overlay:
+            row = item.to_dict() if isinstance(item, Evaluation) else dict(item)
+            Evaluation(**row)
+            if (row["run_id"] != manifest["run_id"] or row["scope"] != "stage"
+                    or row["evaluation_id"] in ids or row.get("propagation")
+                    or any(row.get(k) is not None for k in ("task_success", "agentdojo_utility",
+                       "strict_success", "permission_violations", "unauthorized_attempt_ids",
+                       "unauthorized_execution_ids"))):
+                raise TraceError("overlay must contain unique stage work judgments only")
+            if not set(row.get("evidence_ids", [])).issubset(evidence_ids):
+                raise TraceError("overlay cites unknown evidence")
+            for key, value in row["work_validity"].items():
+                node = nodes_by_id.get(key)
+                if (node is None or node["attempt_id"] != row["attempt_id"]
+                        or node.get("execution_segment_id") != row.get("execution_segment_id")
+                        or value not in {"valid", "invalid", "unknown"}
+                        or key in existing):
+                    raise TraceError("invalid, conflicting, or foreign node judgment")
+                if value != "unknown" and not row.get("evidence_ids"):
+                    raise TraceError("known judgments require evidence")
+                existing[key] = value
+            ids.add(row["evaluation_id"])
+            extra.append(row)
+        evaluations = [*evaluations, *extra]
     active, seen_steps = {}, set()
     for i, e in enumerate(events, 1):
         if e["event_seq"] != i:
