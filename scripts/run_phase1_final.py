@@ -5,9 +5,10 @@ resumed: finished trials are skipped, an interrupted one is moved to
 <output>/interrupted/ (kept, never deleted) and run again. At the end every finished
 trial is summarized together into <output>/summary/ (runs.csv, condition_summary.csv).
 
-  uv run python scripts/run_phase1_final.py --model qwen2.5:7b \
-      --base-url http://127.0.0.1:11434/v1 --runtime "ollama 0.x, qwen2.5:7b Q4_K_M" \
+  uv run python scripts/run_phase1_final.py --profile configs/phase1_final.json \
       --output runs/phase1-final
+
+The profile holds the team's locked model settings; any flag given explicitly overrides it.
 
 Use --smoke first (one scenario through all five conditions, repeat 0 only).
 --scripted runs the same plan with B's test client, to check the pipeline only.
@@ -32,6 +33,8 @@ CONTROLS = ("clean", "clean_verify")
 FAULT_CONDITIONS = ("fault", "full_restart", "always_verify")
 SITES = {"researcher_to_planner": "research_to_plan", "planner_to_executor": "plan_to_execute"}
 PAYLOADS = "faults/payloads.yaml"
+PROFILE_KEYS = {"model", "base_url", "runtime", "plan_format", "temperature", "max_tokens", "request_timeout",
+                "repeats", "api_key_env"}
 LIMITS = {"model_calls": 60, "tool_calls": 40, "wall_seconds": 900, "tokens": None}
 
 
@@ -78,6 +81,15 @@ def main():
     p.add_argument("--smoke", action="store_true", help="repeat 0, task 0: controls + first scenario only")
     p.add_argument("--scripted", action="store_true", help="B's test client instead of a model (pipeline check)")
     p.add_argument("--api-key-env", default="OPENAI_COMPATIBLE_API_KEY")
+    p.add_argument("--profile", type=Path, help="JSON file with the locked settings (keys are option names)")
+    pre, _ = p.parse_known_args()
+    profile = {}
+    if pre.profile:
+        profile = json.loads(pre.profile.read_text())
+        unknown = set(profile) - PROFILE_KEYS
+        if unknown:
+            p.error(f"unknown profile settings: {sorted(unknown)}")
+        p.set_defaults(**profile)
     a = p.parse_args()
     if a.repeats < 1:
         p.error("--repeats must be positive")
@@ -96,13 +108,14 @@ def main():
 
     info = {"commit": git("rev-parse", "HEAD"), "dirty": bool(dirty), "python": platform.python_version(),
             "machine": f"{platform.system()} {platform.release()} {platform.machine()}", "host": platform.node(),
-            "argv": sys.argv[1:], "trials": len(configs), "keys": [key(c) for c in configs]}
+            "argv": sys.argv[1:], "profile": profile, "trials": len(configs), "keys": [key(c) for c in configs]}
     out = a.output.resolve()
     trials, interrupted = out / "trials", out / "interrupted"
     info_path = out / "run_info.json"
     if info_path.exists():
         old = json.loads(info_path.read_text())
-        same = {k: old.get(k) for k in ("commit", "argv", "keys")} == {k: info[k] for k in ("commit", "argv", "keys")}
+        same = {k: old.get(k) for k in ("commit", "argv", "profile", "keys")} == \
+            {k: info[k] for k in ("commit", "argv", "profile", "keys")}
         if not same:
             p.error(f"{out} holds a sweep with a different commit or settings; use a new --output")
         info["started"] = old["started"]

@@ -55,19 +55,22 @@ is its own batch, so the sweep resumes after a stop: finished trials are skipped
 an interrupted one is kept under `interrupted/` and rerun. All finished trials are
 summarized together in `summary/` (`runs.csv`, `condition_summary.csv`).
 
+The locked setup is `configs/phase1_final.json`: TritonAI `api-glm-5.3-flash`,
+`json_schema` plans, temperature 0, 5 repeats (the settings of the 2026-10-30 smoke
+run). Set `TRITONAI_API_KEY` in the shell, never in a file.
+
 ```sh
 # 1. pipeline check with no model (seconds)
 uv run python scripts/run_phase1_final.py --scripted --output runs/final-check
 # 2. one scenario through all five conditions with the real model
-uv run python scripts/run_phase1_final.py --smoke --model qwen2.5:7b \
-  --runtime "ollama <version>, qwen2.5:7b <quantization>" --output runs/final-smoke
-# 3. the full sweep (same flags, new output)
-uv run python scripts/run_phase1_final.py --model qwen2.5:7b \
-  --runtime "ollama <version>, qwen2.5:7b <quantization>" --output runs/phase1-final
+uv run python scripts/run_phase1_final.py --profile configs/phase1_final.json --smoke --output runs/final-smoke
+# 3. the full sweep (new output)
+uv run python scripts/run_phase1_final.py --profile configs/phase1_final.json --output runs/phase1-final
 ```
 
-Use MLX's `--plan-format prompt_only` as in `docs/results.md`. Do not change the model,
-flags or commit midway; a resumed sweep with different settings is refused.
+Do not change the profile, flags or commit midway; a resumed sweep with different
+settings is refused. Runs with other settings (e.g. `json_object`) are exploratory and
+reported separately.
 
 Report `clean_run_rejection_rate` as a clean-run rejection proxy, not as confirmed
 unnecessary denial. Inspect its sample count and `clean_verify_runs_without_decision`.

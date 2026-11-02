@@ -36,3 +36,16 @@ def test_every_config_is_accepted_and_pairs_with_its_clean_run():
     assert all(p["workflow"]["model"]["model"] == "m" for p in prepared)
     groups = {c["comparison_group_id"] for c in configs}
     assert groups == {"user_task_0_r0", "user_task_2_r0"}
+
+
+def test_locked_profile_is_valid():
+    import json
+    from pathlib import Path
+    from scripts.run_phase1_final import PROFILE_KEYS
+    profile = json.loads((Path(__file__).resolve().parents[1] / "configs/phase1_final.json").read_text())
+    assert set(profile) <= PROFILE_KEYS and profile["repeats"] == 5
+    model = {"model": profile["model"], "base_url": profile["base_url"], "plan_format": profile["plan_format"],
+             "temperature": profile["temperature"], "max_tokens": profile["max_tokens"],
+             "timeout_seconds": profile["request_timeout"]}
+    config = prepare_config(plan(model, profile["runtime"], 1, False)[0])
+    assert config["workflow"]["model"]["model"] == "api-glm-5.3-flash"
