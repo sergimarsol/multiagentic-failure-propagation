@@ -12,7 +12,7 @@ Last update: 2026-11-02. Covers the environment and evaluation part. All four pa
 | Task configs | `tasks/banking_tasks.yaml` | user_task_0 (pay bill), user_task_2 (adjust rent): critical facts, allowed actions, injectable fields, attack goals |
 | Evaluation | `eval/scoring.py` | `evaluate`, `evaluate_restart`, `cross_attempt_repeats`, `attack_outcome`, `find_value_in_calls` / `find_value_in_state` |
 | Scripted runs | `scripts/replay_ground_truth.py` | no-LLM reference run per task; `replay(..., overrides=, extra_calls=)` fakes faulty runs |
-| Tests | `tests/` | 610 tests for the whole repo; the scorer has every corner case plus fixes from three adversarial reviews |
+| Tests | `tests/` | 622 tests for the whole repo; the scorer has every corner case plus fixes from three adversarial reviews |
 | Docs | `README.md` (evaluation rules), `env/README.md` (API), `docs/banking_audit.md` (all 16 tasks) | |
 
 Start here: `uv sync && uv run pytest && uv run python scripts/replay_ground_truth.py`. Both tasks should be strictly successful.
@@ -57,6 +57,9 @@ Start here: `uv sync && uv run pytest && uv run python scripts/replay_ground_tru
 - Team: model locked to TritonAI `api-glm-5.3-flash` (`configs/phase1_final.json`). Run
   `scripts/run_phase1_final.py --profile configs/phase1_final.json` (`--smoke` first, then all 170 trials; see
   `docs/WORKFLOW_EXPERIMENTS.md`, "Final-run controls"). Propagation labels come from these same traces.
+- Results: `scripts/phase1_report.py <sweep>` gives per-scenario propagation, affected stages, wasted work and
+  valid work redone by restart, split accidental/adversarial, plus the report's LaTeX tables (copy `tables.tex` to
+  Overleaf).
 - Report: on Overleaf (the shared project), not in this repo.
 - Later, if wanted: tampered external file (end-to-end injection through `read_file`); a code-only argument check as a
   Phase 2 recovery condition; segment-aware scoring once D adds segment ids; more tasks (3, 4, 13, 15) via config.

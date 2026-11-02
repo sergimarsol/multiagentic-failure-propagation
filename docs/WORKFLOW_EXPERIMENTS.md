@@ -68,6 +68,12 @@ uv run python scripts/run_phase1_final.py --profile configs/phase1_final.json --
 uv run python scripts/run_phase1_final.py --profile configs/phase1_final.json --output runs/phase1-final
 ```
 
+Then build the results: `uv run python scripts/phase1_report.py runs/phase1-final` joins C's
+propagation analysis with D's costs and writes `report/` (per-trial and grouped CSVs plus
+`tables.tex` for the report). It fills the affected stages and wasted work that D's
+summaries leave unknown; definitions are in the script's docstring. Reviewed labels can
+replace C's suggested ones with `--reviewed reviewed.csv` (columns `trial,final_outcome`).
+
 Do not change the profile, flags or commit midway; a resumed sweep with different
 settings is refused. Runs with other settings (e.g. `json_object`) are exploratory and
 reported separately.
