@@ -20,6 +20,30 @@ uv run python scripts/replay_ground_truth.py   # scripted (no-LLM) run of every 
 | `docs/phase1_plan.md`, `docs/assignment.md` | project plan and course assignment |
 | `progress.md` | team progress notes |
 
+## Reproducing Phase 1
+
+Final setup: tasks `user_task_0` and `user_task_2`, the 10 fault scenarios in `faults/payloads.yaml`, five
+conditions (clean, clean_verify, fault, full_restart, always_verify), 5 repeats each: 170 trials. The model and
+its settings are locked in [`configs/phase1_final.json`](configs/phase1_final.json) (TritonAI `api-glm-5.3-flash`,
+temperature 0, JSON-schema plans). Orchestration and tools run on a laptop or CPU instance.
+
+```bash
+uv sync && uv run pytest                                   # 1. install and test (no model needed)
+uv run python scripts/run_phase1_final.py --scripted --output runs/check   # 2. pipeline check, no model
+
+export TRITONAI_API_KEY=...                                # 3. real runs (key only in the shell)
+uv run python scripts/run_phase1_final.py --profile configs/phase1_final.json --smoke --output runs/smoke
+uv run python scripts/run_phase1_final.py --profile configs/phase1_final.json --output runs/phase1-final
+
+uv run python scripts/package_phase1_results.py runs/phase1-final   # 4. report + package -> results/phase1-final/
+```
+
+Step 3 refuses uncommitted changes and records the commit, machine and settings; it can be stopped and rerun with the
+same command to resume. Step 4 writes `results/phase1-final/`: every trace, D's summaries, C's propagation labels,
+the per-condition and per-scenario tables (`report/`, including the report's `tables.tex`), a README and checksums.
+Its definitions of affected stages and wasted work are in `scripts/phase1_report.py`. Earlier runs
+(`docs/results.md`, the 2026-10-30 smoke and the first 50 fault runs) used other settings and are exploratory only.
+
 ## B: local-model workflow
 
 Part B implements separate Researcher, Planner and Executor model conversations, plus an optional
