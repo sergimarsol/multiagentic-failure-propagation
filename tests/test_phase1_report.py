@@ -90,3 +90,58 @@ def test_families_are_reported_separately(sweep):
     text = tables.read_text()
     assert r"\label{tab:conditions}" in text and r"\label{tab:propagation}" in text
     assert text.count(r"\\") >= 8 + 10  # condition rows + one row per scenario
+
+
+def _package(sweep_dir, dest, **env):
+    import os
+    return subprocess.run([sys.executable, str(ROOT / "scripts/package_phase1_results.py"), str(sweep_dir),
+                           "--dest", str(dest)], cwd=ROOT, capture_output=True, text=True,
+                          env={**os.environ, **env})
+
+
+def test_package_keeps_every_trial_with_checksums(sweep, tmp_path):
+    import hashlib
+    sweep_dir = sweep[3].parents[1]
+    dest = tmp_path / "results"
+    assert _package(sweep_dir, dest).returncode == 0
+    assert len(list((dest / "trials").iterdir())) == 34
+    readme = (dest / "README.md").read_text()
+    assert "34 of 34 planned finished" in readme and "`fixture`" in readme
+    for line in (dest / "SHA256SUMS").read_text().splitlines():
+        digest, name = line.split("  ", 1)
+        assert hashlib.sha256((dest / name).read_bytes()).hexdigest() == digest
+    assert _package(sweep_dir, dest).returncode != 0  # never overwrites
+
+
+def test_package_refuses_credentials(sweep, tmp_path):
+    import shutil
+    copy = tmp_path / "sweep"
+    shutil.copytree(sweep[3].parents[1], copy)
+    (next(copy.glob("trials/*/run_0000")) / "notes.txt").write_text("key abcd1234secretvalue")
+    result = _package(copy, tmp_path / "results", TRITONAI_API_KEY="abcd1234secretvalue")
+    assert result.returncode != 0 and "credentials" in result.stderr
+    assert not (tmp_path / "results").exists() and not (tmp_path / "results.partial").exists()
+
+
+def test_package_refuses_unfinished_sweep(sweep, tmp_path):
+    import json
+    import shutil
+    copy = tmp_path / "sweep"
+    shutil.copytree(sweep[3].parents[1], copy)
+    info = json.loads((copy / "run_info.json").read_text())
+    info.pop("finished")
+    (copy / "run_info.json").write_text(json.dumps(info))
+    assert _package(copy, tmp_path / "results").returncode != 0
+
+
+def test_unreadable_trace_is_reported_not_guessed(sweep, tmp_path):
+    import shutil
+    from scripts.phase1_report import build
+    copy = tmp_path / "sweep"
+    shutil.copytree(sweep[3].parents[1], copy)
+    run = next(copy.glob("trials/*-fault/run_0000"))
+    (run / "events.jsonl").write_text((run / "events.jsonl").read_text() + '{"not": "an event"}\n')
+    rows = build(copy, tmp_path / "report")[0]
+    broken = next(r for r in rows if r["trial"] == run.parent.name)
+    assert broken["outcome"].startswith("analysis_error")
+    assert broken["wasted_calls"] is None and broken["affected_stages"] is None

@@ -126,13 +126,22 @@ def trial_row(trial, reviewed):
     if row["condition"] in ("clean", "clean_verify") or not run.exists():
         return row
     try:
-        events = _events(run)
-        label = next(l for l in analyze_run(run) if l["attempt_id"] == "attempt_0")
+        _label_trial(row, run, summary, reviewed.get(trial.name))
     except (OSError, ValueError, KeyError, TypeError, StopIteration) as exc:
+        # A trace that cannot be analyzed is reported, never guessed.
+        for key in ("injection_applied", "affected_stages", "state_changed", "contaminated_calls"):
+            row[key] = None
+        for key in [k for k in row if k.startswith(("wasted_", "redone_valid_"))]:
+            row[key] = None
         row["outcome"] = f"analysis_error: {type(exc).__name__}"
-        return row
+    return row
+
+
+def _label_trial(row, run, summary, reviewed_outcome):
+    events = _events(run)
+    label = next(l for l in analyze_run(run) if l["attempt_id"] == "attempt_0")
     row["injection_applied"] = label["injection_applied"]
-    suggested = reviewed.get(trial.name) or label["suggested_outcome"]
+    suggested = reviewed_outcome or label["suggested_outcome"]
     row["outcome"] = OUTCOMES.get(suggested, suggested)
     row["state_changed"] = label["relevant_state_changed"]
     contaminated = invalid_nodes(events, label)
@@ -155,7 +164,6 @@ def trial_row(trial, reviewed):
     # A's scorer and C's analyzer judge the same attempt independently; flag disagreement.
     if summary.get("initial_attack_success") is True and row["outcome"] in ("not_exposed", "exposed_not_adopted"):
         row["label_conflict"] = "attack reached its goal but C labels it not adopted"
-    return row
 
 
 def _tokens(cost):
@@ -287,24 +295,32 @@ def latex(conditions, propagation):
     return "\n".join(lines) + "\n"
 
 
-def main():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("sweep", type=Path, help="output directory of scripts/run_phase1_final.py")
-    p.add_argument("--reviewed", type=Path, help="CSV with columns trial, final_outcome")
-    p.add_argument("--output", type=Path, help="default: <sweep>/report")
-    a = p.parse_args()
-    reviewed = {}
-    if a.reviewed:
-        reviewed = {r["trial"]: r["final_outcome"] for r in csv.DictReader(a.reviewed.open()) if r.get("final_outcome")}
-    trials = sorted(d for d in (a.sweep / "trials").iterdir() if (d / "result_0000.json").exists())
-    rows = [trial_row(t, reviewed) for t in trials]
-    out = a.output or a.sweep / "report"
+def build(sweep, out, reviewed=None):
+    """Write the report for a sweep directory into out; returns (trials, conditions, propagation)."""
+    trials = sorted(d for d in (Path(sweep) / "trials").iterdir() if (d / "result_0000.json").exists())
+    rows = [trial_row(t, reviewed or {}) for t in trials]
+    out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     conditions, propagation = condition_rows(rows), propagation_rows(rows)
     write_csv(out / "trials.csv", rows)
     write_csv(out / "conditions.csv", conditions)
     write_csv(out / "propagation.csv", propagation)
     (out / "tables.tex").write_text(latex(conditions, propagation))
+    return rows, conditions, propagation
+
+
+def read_reviewed(path):
+    return {r["trial"]: r["final_outcome"] for r in csv.DictReader(Path(path).open()) if r.get("final_outcome")}
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("sweep", type=Path, help="output directory of scripts/run_phase1_final.py")
+    p.add_argument("--reviewed", type=Path, help="CSV with columns trial, final_outcome")
+    p.add_argument("--output", type=Path, help="default: <sweep>/report")
+    a = p.parse_args()
+    out = a.output or a.sweep / "report"
+    rows = build(a.sweep, out, read_reviewed(a.reviewed) if a.reviewed else None)[0]
     conflicts = sum(bool(r["label_conflict"]) for r in rows)
     print(f"{len(rows)} trials -> {out}; {conflicts} label conflicts to review")
 

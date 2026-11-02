@@ -74,6 +74,12 @@ propagation analysis with D's costs and writes `report/` (per-trial and grouped 
 summaries leave unknown; definitions are in the script's docstring. Reviewed labels can
 replace C's suggested ones with `--reviewed reviewed.csv` (columns `trial,final_outcome`).
 
+To commit the results (`runs/` is gitignored), run
+`uv run python scripts/package_phase1_results.py runs/phase1-final`. It builds the report and
+C's analysis, then writes `results/phase1-final/` with every trial (failed and interrupted
+ones too), a generated README, and `SHA256SUMS`. It refuses to write anything that looks like
+an API key.
+
 Do not change the profile, flags or commit midway; a resumed sweep with different
 settings is refused. Runs with other settings (e.g. `json_object`) are exploratory and
 reported separately.
