@@ -1,7 +1,9 @@
 # Progress
 
 Last update: 2026-11-02. Covers the environment and evaluation part. All four parts are merged into `main`
-(environment/evaluation, B workflow, C injection harness, D experiment infrastructure); there are no open PRs.
+(environment/evaluation, B workflow, C injection harness, D experiment infrastructure). The final 170-trial
+sweep is done (`results/phase1-final/`, PR #14) and its report tables are in `results/phase1-final/report/`.
+D's offline work judge (PR #15) can add judged invalid work for comparison with the rule-based numbers.
 
 ## What exists
 
@@ -57,8 +59,8 @@ Start here: `uv sync && uv run pytest && uv run python scripts/replay_ground_tru
 - Team: model locked to TritonAI `api-glm-5.3-flash` (`configs/phase1_final.json`). Run
   `scripts/run_phase1_final.py --profile configs/phase1_final.json` (`--smoke` first, then all 170 trials; see
   `docs/WORKFLOW_EXPERIMENTS.md`, "Final-run controls"). Propagation labels come from these same traces.
-- Results: `scripts/phase1_report.py <sweep>` gives per-scenario propagation, affected stages, wasted work and
-  valid work redone by restart, split accidental/adversarial, plus the report's LaTeX tables (copy `tables.tex` to
+- Results: `scripts/phase1_report.py <sweep>` gives per-scenario propagation, affected stages, contaminated
+  and discarded work, valid work redone by restart, split accidental/adversarial, plus the report's LaTeX tables (copy `tables.tex` to
   Overleaf).
 - Package for the repo: `scripts/package_phase1_results.py <sweep>` → `results/phase1-final/` (traces, summaries,
   report, C's labels, README, checksums; refuses on anything that looks like an API key).

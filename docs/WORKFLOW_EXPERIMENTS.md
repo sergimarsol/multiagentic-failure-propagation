@@ -70,8 +70,8 @@ uv run python scripts/run_phase1_final.py --profile configs/phase1_final.json --
 
 Then build the results: `uv run python scripts/phase1_report.py runs/phase1-final` joins C's
 propagation analysis with D's costs and writes `report/` (per-trial and grouped CSVs plus
-`tables.tex` for the report). It fills the affected stages and wasted work that D's
-summaries leave unknown; definitions are in the script's docstring. Reviewed labels can
+`tables.tex` for the report). It fills the affected stages and the contaminated (used the fault), discarded (failed
+attempt) and valid-redone work that D's summaries leave unknown; definitions are in the script's docstring. Reviewed labels can
 replace C's suggested ones with `--reviewed reviewed.csv` (columns `trial,final_outcome`).
 
 To commit the results (`runs/` is gitignored), run
