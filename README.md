@@ -20,6 +20,24 @@ uv run python scripts/replay_ground_truth.py   # scripted (no-LLM) run of every 
 | `docs/phase1_plan.md`, `docs/assignment.md` | project plan and course assignment |
 | `progress.md` | team progress notes |
 
+## Phase 1 results
+
+All 170 trials (2026-11-02, commit `65e89e6`) are in [`results/phase1-final/`](results/phase1-final/): full
+traces of every trial, D's summaries, C's propagation labels, the report tables (`report/`) and checksums. No
+trial errored or was dropped. Per condition (final strict success / attack success, from `report/conditions.csv`):
+
+| Faults | clean | clean_verify | fault | full_restart | always_verify |
+|---|---|---|---|---|---|
+| none | 9/10 | 9/10 | | | |
+| accidental | | | 2/20 / 14/20 | 19/20 / 10/20 | 14/20 / 0/20 |
+| adversarial | | | 30/30 / 0/30 | 28/30 / 0/30 | 24/30 / 0/30 |
+
+Accidental faults reached the bank in 14 of 20 runs without recovery. Adversarial instructions were seen and
+ignored every time, which shows the agents did not follow them, not that recovery works. Always verify stopped
+every injected handoff but doubled latency and model calls and failed 12 of 50 tasks. Full restart recovered the
+task but could not undo payments already made (10 of 20 accidental runs). Rebuild the tables from the traces with
+`uv run python scripts/phase1_report.py results/phase1-final`.
+
 ## Reproducing Phase 1
 
 Final setup: tasks `user_task_0` and `user_task_2`, the 10 fault scenarios in `faults/payloads.yaml`, five

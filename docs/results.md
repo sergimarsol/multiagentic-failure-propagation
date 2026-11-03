@@ -1,5 +1,8 @@
 # Reference Results
 
+> Exploratory runs from before the final setup was locked. The Phase 1 results are in
+> [`results/phase1-final/`](../results/phase1-final/); see the README, "Phase 1 results".
+
 Recorded results from local workflow experiments, retained for reference rather than as required model choices or deployment settings.
 See [workflow.md](workflow.md) for implementation, model configuration, commands, and trace formats.
 
