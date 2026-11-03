@@ -18,7 +18,7 @@ Rent adjustment (user\_task\_2): Read a landlord notice, retrieve scheduled paym
 
 Confirm these task IDs and their definitions after pinning the AgentDojo commit and benchmark version.
 
-The workflow uses three roles sharing one configured language-model endpoint, with separate prompts and conversation contexts. The current real-model setup runs orchestration and the simulated Banking environment on AWS EC2 and uses TritonAI's hosted `api-glm-5.3-flash` for inference. A local endpoint remains supported, but results from different model/backend configurations must not be pooled as matched trials. Record the code commit, model ID, endpoint, generation parameters, and budgets for each experiment:
+The workflow uses three roles sharing one configured language-model endpoint, with separate prompts and conversation contexts. The final Phase 1 sweep ran orchestration and the simulated Banking environment on a UCSD DSMLP container (earlier smoke runs used AWS EC2) and used TritonAI's hosted `api-glm-5.3-flash` for inference. A local endpoint remains supported, but results from different model/backend configurations must not be pooled as matched trials. Record the code commit, model ID, endpoint, generation parameters, and budgets for each experiment:
 
 * Researcher: Query tools and extract the facts required by the task.  
 * Planner: Combine those facts with the original user request to produce an action plan.  
