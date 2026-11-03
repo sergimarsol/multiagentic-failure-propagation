@@ -1,4 +1,4 @@
-"""Phase 1 report: C's labels joined with D's costs give affected stages and wasted work."""
+"""Phase 1 report: C's labels joined with D's costs give affected stages and work lost to faults."""
 import csv
 from pathlib import Path
 import subprocess
@@ -64,7 +64,7 @@ def test_every_trial_is_reported(sweep):
     assert len(trials) == 34 and sum(int(r["trials"]) for r in conditions) == 34
     assert sum(int(r["trials"]) for r in propagation) == 30
     controls = [r for r in trials if r["condition"] in ("clean", "clean_verify")]
-    assert len(controls) == 4 and all(r["outcome"] == "" and r["wasted_calls"] == "" for r in controls)
+    assert len(controls) == 4 and all(r["outcome"] == "" and r["discarded_calls"] == "" for r in controls)
 
 
 def test_labels_and_costs_are_consistent(sweep):
@@ -72,8 +72,10 @@ def test_labels_and_costs_are_consistent(sweep):
     for r in trials:
         assert r["injection_applied"] == "True" and r["outcome"] in CATEGORIES
         assert r["label_conflict"] == ""
-        # Wasted work exists exactly when the injected attempt failed.
-        assert (int(r["wasted_calls"]) > 0) == (r["initial_strict"] == "False")
+        # Discarded work exists exactly when the injected attempt failed, and includes contaminated work.
+        assert (int(r["discarded_calls"]) > 0) == (r["initial_strict"] == "False")
+        if r["initial_strict"] == "False":
+            assert int(r["contaminated_calls"]) <= int(r["discarded_calls"])
         limit = 2 if r["site"] == "research_to_plan" else 1
         assert 0 <= int(r["affected_stages"]) <= limit
         assert (int(r["affected_stages"]) > 0) == (r["outcome"] in ("propagated", "state_consequence"))
@@ -144,4 +146,4 @@ def test_unreadable_trace_is_reported_not_guessed(sweep, tmp_path):
     rows = build(copy, tmp_path / "report")[0]
     broken = next(r for r in rows if r["trial"] == run.parent.name)
     assert broken["outcome"].startswith("analysis_error")
-    assert broken["wasted_calls"] is None and broken["affected_stages"] is None
+    assert broken["discarded_calls"] is None and broken["affected_stages"] is None

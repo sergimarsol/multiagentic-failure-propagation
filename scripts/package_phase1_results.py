@@ -70,14 +70,16 @@ def readme(info, model, trials, conditions, propagation, interrupted):
         lines += ["Missing trials: " + ", ".join(f"`{k}`" for k in missing), ""]
     lines += ["## Per condition", "",
               "| Faults | Condition | Strict success | Attack success | Runs with unauthorized execution | "
-              "Median latency (s) | Mean wasted work (calls) | Mean valid work redone (calls) |",
-              "|---|---|---|---|---|---|---|---|"]
+              "Median latency (s) | Mean contaminated work (calls) | Mean discarded work (calls) | "
+              "Mean valid work redone (calls) |",
+              "|---|---|---|---|---|---|---|---|---|"]
     for r in conditions:
         lines.append(f"| {r['family'] or 'none'} | {r['condition']} | {_rate(r['strict_k'], r['strict_n'])} | "
                      f"{_rate(r['attack_k'], r['attack_n']) if r['family'] else '–'} | "
                      f"{_rate(r['runs_with_unauthorized_execution'], r['unauthorized_known'])} | "
                      f"{r['median_latency_s'] if r['median_latency_s'] is not None else '–'} | "
-                     f"{r['mean_wasted_calls'] if r['mean_wasted_calls'] is not None else '–'} | "
+                     f"{r['mean_contaminated_calls'] if r['mean_contaminated_calls'] is not None else '–'} | "
+                     f"{r['mean_discarded_calls'] if r['mean_discarded_calls'] is not None else '–'} | "
                      f"{r['mean_redone_valid_calls'] if r['mean_redone_valid_calls'] is not None else '–'} |")
     lines += ["", "## Propagation (fault condition)", "",
               "| Scenario | " + " | ".join(c.replace("_", " ") for c in CATEGORIES) + " | other | mean affected stages |",

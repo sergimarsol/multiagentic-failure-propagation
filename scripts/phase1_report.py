@@ -1,4 +1,4 @@
-"""Phase 1 results: propagation, affected stages and wasted work for a final sweep.
+"""Phase 1 results: propagation, affected stages and work lost to faults for a final sweep.
 
 Joins C's propagation analysis (scripts/analyze_injection_trace.py) with D's traces
 and A's scores for every trial of scripts/run_phase1_final.py:
@@ -15,16 +15,18 @@ repeated_previously_valid_cost:
   researcher->planner the plan is affected if the planner adopted it, and the
   execution if it ran an adopted plan or attempted the fault's action. With a fault
   at planner->executor only the execution can be affected.
-- contaminated work: cost of the affected stages' node executions.
-- wasted work: cost of all planning/execution after the injection when the injected
-  attempt failed strict scoring, since its result is thrown away. This also counts a
-  fault that broke the run without being adopted (e.g. a planner that saw conflicting
-  facts and planned nothing). 0 when that attempt succeeded.
+- contaminated work: cost of the affected stages' node executions. This is work
+  confirmed wrong (it used the fault), a lower bound on invalid work.
+- discarded work: cost of all planning/execution after the injection when the injected
+  attempt failed strict scoring, since its result is thrown away. It is not all
+  invalid: it also counts correct work in a run the fault broke without being adopted
+  (e.g. a planner that saw conflicting facts and rightly planned nothing). 0 when that
+  attempt succeeded. Contaminated work is always part of discarded work when it failed.
 - valid work redone: for full restart, what the second attempt spent redoing stages
-  that were valid in the first (not wasted); this is what selective recovery could keep.
-Verifier and regeneration work is verification overhead, never wasted work. A
-fault that was not applied, or whose adoption C could not judge, gives unknown
-(empty) values, never 0. --reviewed replaces C's suggested label of a trial with a
+  of the first that were not discarded; this is what selective recovery could keep.
+Verifier calls are verification overhead, never discarded work; a stage regenerated
+after a rejection counts like any other stage. A fault that was not applied, or whose
+adoption C could not judge, gives unknown (empty) values, never 0. --reviewed replaces C's suggested label of a trial with a
 reviewed one (CSV with columns trial, final_outcome). C's analyzer adds its derived
 fault_cases.json to a trial directory that lacks one; nothing else in the traces changes.
 """
@@ -71,7 +73,7 @@ def _injection(events, attempt):
 
 
 def downstream_nodes(events, attempt):
-    """Planning and execution after the injection (verification and regeneration excluded)."""
+    """Planning and execution after the injection, including regenerations (verifier nodes excluded)."""
     injected = _injection(events, attempt)
     return {e["node_execution_id"] for e in _node_runs(events, attempt)
             if e["event_seq"] > injected["event_seq"] and e["node_id"] in ("plan", "execute")}
@@ -121,7 +123,7 @@ def trial_row(trial, reviewed):
                tokens=_tokens(total), verifier_calls=(summary.get("verification_cost") or {}).get("model_calls"),
                verifier_decisions=summary.get("verifier_decisions"), verifier_rejections=summary.get("verifier_rejections"))
     row.update(injection_applied=None, outcome="", affected_stages=None, state_changed=None,
-               contaminated_calls=None, wasted_calls=None, wasted_tokens=None, wasted_s=None,
+               contaminated_calls=None, discarded_calls=None, discarded_tokens=None, discarded_s=None,
                redone_valid_calls=None, redone_valid_tokens=None, redone_valid_s=None, label_conflict="")
     if row["condition"] in ("clean", "clean_verify") or not run.exists():
         return row
@@ -131,7 +133,7 @@ def trial_row(trial, reviewed):
         # A trace that cannot be analyzed is reported, never guessed.
         for key in ("injection_applied", "affected_stages", "state_changed", "contaminated_calls"):
             row[key] = None
-        for key in [k for k in row if k.startswith(("wasted_", "redone_valid_"))]:
+        for key in [k for k in row if k.startswith(("discarded_", "redone_valid_"))]:
             row[key] = None
         row["outcome"] = f"analysis_error: {type(exc).__name__}"
     return row
@@ -154,7 +156,7 @@ def _label_trial(row, run, summary, reviewed_outcome):
     strict = summary.get("initial_strict_success")
     if label["injection_applied"] is True and _injection(events, "attempt_0") and strict is not None:
         bad = downstream_nodes(events, "attempt_0") if strict is False else set()
-        _put(row, "wasted", _cost_of(events, bad))
+        _put(row, "discarded", _cost_of(events, bad))
         if row["condition"] == "full_restart":
             old = {e["node_id"] for e in _node_runs(events, "attempt_0")
                    if e["node_execution_id"] not in bad and e["node_id"] != "setup"}
@@ -214,8 +216,8 @@ def condition_rows(rows):
         row["runs_with_unauthorized_execution"], row["unauthorized_known"] = sum(v > 0 for v in known), len(known)
         for col in ("latency_s",):
             row[f"median_{col}"] = _avg(rs, col, median)
-        for col in ("model_calls", "tokens", "verifier_calls", "affected_stages", "contaminated_calls", "wasted_calls", "wasted_tokens",
-                    "wasted_s", "redone_valid_calls", "redone_valid_tokens", "redone_valid_s"):
+        for col in ("model_calls", "tokens", "verifier_calls", "affected_stages", "contaminated_calls", "discarded_calls",
+                    "discarded_tokens", "discarded_s", "redone_valid_calls", "redone_valid_tokens", "redone_valid_s"):
             row[f"mean_{col}"] = _avg(rs, col)
         out.append(row)
     order = {c: i for i, c in enumerate(CONDITIONS)}
@@ -259,10 +261,10 @@ def latex(conditions, propagation):
     clean_verify = next((r for r in conditions if r["condition"] == "clean_verify"), None)
     rejected = _frac(clean_verify["runs_with_rejection"], clean_verify["runs_with_decision"]) if clean_verify else "--"
     lines = [r"% Generated by scripts/phase1_report.py; do not edit by hand.",
-             r"\begin{table}[t]\centering\footnotesize\setlength{\tabcolsep}{4pt}",
-             r"\begin{tabular}{llcccccc}\toprule",
-             r"Faults & Condition & Strict success & Attack success & Unauth.\ exec. & Median latency (s)"
-             r" & Wasted work (calls) & Valid work redone (calls) \\\midrule"]
+             r"\begin{table}[t]\centering\footnotesize\setlength{\tabcolsep}{3.5pt}",
+             r"\begin{tabular}{llccccccc}\toprule",
+             r"Faults & Condition & Strict success & Attack success & Unauth.\ exec. & Latency (s)"
+             r" & Contaminated & Discarded & Valid redone \\\midrule"]
     previous = None
     for r in conditions:
         family = r["family"] or "none"
@@ -274,11 +276,13 @@ def latex(conditions, propagation):
                                  _frac(r["strict_k"], r["strict_n"]),
                                  _frac(r["attack_k"], r["attack_n"]) if r["family"] else "--",
                                  _frac(r["runs_with_unauthorized_execution"], r["unauthorized_known"]),
-                                 _num(r["median_latency_s"]), _num(r["mean_wasted_calls"]),
+                                 _num(r["median_latency_s"]), _num(r["mean_contaminated_calls"]),
+                                 _num(r["mean_discarded_calls"]),
                                  _num(r["mean_redone_valid_calls"])]) + r" \\")
     lines += [r"\bottomrule\end{tabular}",
-              r"\caption{Per condition and fault family, all repeats. Strict success is the final attempt; "
-              r"wasted work and valid work redone are means per run. Clean runs with a verifier rejection: "
+              r"\caption{Per condition and fault family, all repeats. Strict success is the final attempt, latency "
+              r"the median; the last three columns are mean model and tool calls per run. Clean runs the "
+              r"verifier rejected: "
               + rejected + r".}\label{tab:conditions}\end{table}", ""]
     fault = [r for r in propagation if r["condition"] == "fault"]
     lines += [r"\begin{table}[t]\centering\footnotesize\setlength{\tabcolsep}{4pt}",
@@ -289,8 +293,8 @@ def latex(conditions, propagation):
                           str(r["needs_review"] + r["not_applied"] + r["unknown"]),
                           _num(r["mean_affected_stages"])]) + r" \\" for r in fault]
     lines += [r"\bottomrule\end{tabular}",
-              r"\caption{Furthest consequence of each injected fault (fault condition, no recovery). Other: not "
-              r"applied, unknown or still under review. Affected stages: mean downstream stages that used the fault.}"
+              r"\caption{Furthest consequence of each injected fault (fault condition, no recovery; other: not "
+              r"applied, unknown or under review) and mean downstream stages that used it.}"
               r"\label{tab:propagation}\end{table}"]
     return "\n".join(lines) + "\n"
 
