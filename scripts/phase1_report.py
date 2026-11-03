@@ -11,17 +11,19 @@ propagation.csv (grouped), and tables.tex (LaTeX tables for the report).
 Only the injected (first) attempt is labelled. Its node executions are valid or
 invalid from C's observations, which fills D's invalid_path_cost and
 repeated_previously_valid_cost:
-- affected stages: downstream stages whose work used the fault. With a fault at
-  researcher->planner the plan is affected if the planner adopted it, and the
-  execution if it ran an adopted plan or attempted the fault's action. With a fault
-  at planner->executor only the execution can be affected.
-- contaminated work: cost of the affected stages' node executions. This is work
-  confirmed wrong (it used the fault), a lower bound on invalid work.
+- affected stages: downstream stages whose own work used the fault. With a fault at
+  researcher->planner the plan is affected if the planner adopted it; the execution is
+  affected only if the executor attempted the fault's action or adopted it, never just
+  because the plan carried it (an executor that refuses the bad action did valid work).
+  With a fault at planner->executor only the execution can be affected.
+- contaminated work: cost of the affected stages' node executions, i.e. work that used
+  the fault, whether or not the attempt then failed.
 - discarded work: cost of all planning/execution after the injection when the injected
-  attempt failed strict scoring, since its result is thrown away. It is not all
-  invalid: it also counts correct work in a run the fault broke without being adopted
-  (e.g. a planner that saw conflicting facts and rightly planned nothing). 0 when that
-  attempt succeeded. Contaminated work is always part of discarded work when it failed.
+  attempt failed strict scoring, since its result is thrown away; 0 when that attempt
+  succeeded. It also counts correct work in a run the fault broke without being adopted
+  (e.g. a planner that saw conflicting facts and rightly planned nothing).
+  The two measure different things and are not bounds on each other: an attempt can
+  succeed despite contaminated work (a bad plan the executor refused).
 - valid work redone: for full restart, what the second attempt spent redoing stages
   of the first that were not discarded; this is what selective recovery could keep.
 Verifier calls are verification overhead, never discarded work; a stage regenerated
@@ -90,11 +92,13 @@ def invalid_nodes(events, label):
     nodes = [e for e in _node_runs(events, label["attempt_id"]) if e["event_seq"] > after]
     attempted = label["relevant_tool_attempted"]
     if site == "research":
-        planner = label["planner_adopted_fault"]
-        if planner is None and attempted is not True:
+        planner, executor = label["planner_adopted_fault"], label["executor_adopted_fault"]
+        bad_execute = attempted is True or executor is True
+        if planner is None and not bad_execute:
             return None
+        if planner is True and not bad_execute and attempted is None and executor is None:
+            return None  # the plan carried the fault but what the executor did is unknown
         bad_plan = planner is True
-        bad_execute = bad_plan or attempted is True
     else:
         executor = label["executor_adopted_fault"]
         if executor is None and attempted is None:
