@@ -2,7 +2,8 @@
 
 Last update: 2026-11-02. Covers the environment and evaluation part. All four parts are merged into `main`
 (environment/evaluation, B workflow, C injection harness, D experiment infrastructure). The final 170-trial
-sweep is done (`results/phase1-final/`, PR #14) and its report tables are in `results/phase1-final/report/`.
+sweep is merged (`results/phase1-final/`) with its report tables in `results/phase1-final/report/`; headline
+numbers are in the README, "Phase 1 results". The Phase 1 report is on Overleaf.
 D's offline work judge (PR #15) can add judged invalid work for comparison with the rule-based numbers.
 
 ## What exists
