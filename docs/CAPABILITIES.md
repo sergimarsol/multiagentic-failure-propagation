@@ -1,8 +1,8 @@
 # D capability status
 
 This table describes D's original scripted example. The real-model Part B workflow is
-now available separately: see [B implementation and C interface](workflow.md) and [reference results](results.md). Its verifier control flow is implemented;
-the recorded single-run experiments do not establish reliable model repair or defense performance.
+now available separately: see [B implementation and C interface](workflow.md). The Phase 1 results (170 real-model
+trials through the configured entry point) are in [`results/phase1-final/`](../results/phase1-final/).
 
 “Real integration” means actual A Banking tools/scorer, not real model inference.
 No B/C implementation or A business rules were changed for this work.
@@ -14,8 +14,8 @@ No B/C implementation or A business rules were changed for this work.
 | Recorder, artifacts, cost, optional segments | Implemented | Banking fixtures and toy tests; legacy logs readable |
 | Clean verification condition and verifier cost | Recording implemented | D fixture is pass-through; B verifier implementation and initial results are documented separately |
 | Shared run budget | Cooperative admission implemented | Fixture tests; hard provider cancellation pending B |
-| Config/matrix/batch/CSV | Implemented; optional D/B configured entry point | B real session with scripted client; new entry point not yet tested with model inference |
-| Repeated-run variation and rate intervals | Implemented; explicit sample counts and missing values | Numerical regressions; no real model variability measured |
+| Config/matrix/batch/CSV | Implemented; optional D/B configured entry point | B real session; used for the 170-trial Phase 1 sweep with the hosted model |
+| Repeated-run variation and rate intervals | Implemented; explicit sample counts and missing values | Numerical regressions; Phase 1 sweep: 5 repeats per condition with Wilson intervals |
 | Cross-attempt repeat adapter | Lazy wrapper for A's helper | A helper now merged; Phase 1 integration supplied by main |
 | Within-segment vs recovery action grouping | Opt-in segment audit IDs and effective-path selection implemented | Real Banking scripted regression tests; real-model Phase 2 integration pending |
 | Dependency-aware invalidation | Implemented for fixed DAG | Toy data/control/state tests |
@@ -25,7 +25,7 @@ No B/C implementation or A business rules were changed for this work.
 | Optional bounded checkpoint retry and older-point escalation | Implemented; Phase 2 defaults: 1 retry / 3 points | Toy failure-path tests only; Phase 1 unchanged |
 | Phase 2 policy provenance and batch metrics | Implemented; additive exports and actual-policy grouping | Three-arm toy batch and reporting regressions; no real model results |
 | Irreversible effects | Report and reject unsafe reset | Toy tests; no external-effect compensation |
-| Banking propagation/work-validity judgment | Data contract and proposed fixtures | Pending C/A confirmation; unknown in real summaries |
+| Banking propagation/work-validity judgment | C's rule-based propagation labels; optional offline LLM judge ([OFFLINE_WORK_JUDGMENTS.md](OFFLINE_WORK_JUDGMENTS.md)) | Labels used in Phase 1 results; judged work validity planned for Phase 2 |
 | Actual Banking multi-agent selective recovery | Not integrated | Requires advanced B adapter and A/C integration |
 | Dynamic/concurrent graph, intra-node restore, VM cloning | Not implemented | Outside declared scope |
 | Automated detection | Not implemented | Controlled oracle only |
@@ -45,8 +45,8 @@ Tests establish software behavior, not model recovery rates or universal securit
   shared 4/5. These are deterministic software fixtures, not model performance data.
 - `git diff --check` passes; no changes in A's `env/`, `eval/` or `tasks/`.
 
-A's helper and B's Phase 1 workflow are now included from main. C semantic
-judgments and B's Phase 2 advanced workflow remain integration dependencies. Provider cancellation and an
+A's helper, B's Phase 1 workflow and C's propagation labels are now included from main.
+B's Phase 2 advanced workflow remains an integration dependency. Provider cancellation and an
 end-to-end tracking-overhead experiment are not claimed by these tests.
 
 ## D/B configured Phase 1 entry point
@@ -54,5 +54,5 @@ end-to-end tracking-overhead experiment are not claimed by these tests.
 See [WORKFLOW_EXPERIMENTS.md](WORKFLOW_EXPERIMENTS.md) for shared trial budgets,
 resolved model/session controls and read-only summary import. Scripted-client tests
 use B's actual session and A's simulator/scorer. Old B commands remain unchanged.
-Real inference through the new configured entry point remains pending; C semantic
-annotations and any Phase 2 workflow integration remain separate.
+The Phase 1 sweep (`scripts/run_phase1_final.py`) runs real inference through this entry point;
+any Phase 2 workflow integration remains separate.
