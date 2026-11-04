@@ -67,7 +67,7 @@ uv run python scripts/package_phase1_results.py runs/phase1-final   # 4. report 
 Step 3 refuses uncommitted changes and records the commit, machine and settings; it can be stopped and rerun with the
 same command to resume. Step 4 writes `results/phase1-final/`: every trace, D's summaries, C's propagation labels,
 the per-condition and per-scenario tables (`report/`, including the report's `tables.tex`), a README and checksums.
-Its definitions of affected stages and of contaminated, discarded and redone work are in `scripts/phase1_report.py`. Earlier runs
+Its definitions of affected stages and of contaminated, discarded and non-discarded redone work are in `scripts/phase1_report.py`. Earlier runs
 (`docs/results.md`, the 2026-10-30 smoke and the first 50 fault runs) used other settings and are exploratory only.
 
 ## B: agent workflow

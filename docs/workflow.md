@@ -119,7 +119,7 @@ Successful and failed runs both retain evidence under the selected output direct
 | `artifacts.jsonl` | Intermediate outputs and original/replaced handoffs |
 | `evaluations.jsonl`, `summary.json` | Scores and aggregate metrics |
 | `workflow_summary.json` | Completion, verification decisions, injection status, and errors |
-| `fault_cases.json` | Linked evidence for C's propagation review; semantic labels remain pending |
+| `fault_cases.json` | Linked evidence for C's propagation review (labels come from `scripts/analyze_injection_trace.py`) |
 | `final_answer.txt` | Final answer saved by the all-query runner |
 
 All-query batches also save `results.json`, `results.csv`, and configuration/source hashes. **`runs/` is Git-ignored:** committing code does not publish experiment traces.

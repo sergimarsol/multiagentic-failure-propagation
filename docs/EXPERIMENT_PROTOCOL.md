@@ -217,8 +217,7 @@ Snapshots cover declared application resources only, not arbitrary files/process
 A's task completion, strict verdict, unauthorized attempts/executions and permission
 violations remain separate. `cross_attempt_adapter(task_id)` wraps A's helper if that
 revision is installed; missing helper raises ImportError. It is not implemented by D.
-The checked-out A version still lacks the helper; selecting and validating a revised
-A implementation is pending integration.
+A's helper (`eval.scoring.cross_attempt_repeats`) is merged.
 
 `evidence.group_actions` groups raw tool evidence by attempt and segment. It does not
 classify duplicates. A can use this to distinguish within-segment duplication from

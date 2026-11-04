@@ -71,7 +71,7 @@ def readme(info, model, trials, conditions, propagation, interrupted):
     lines += ["## Per condition", "",
               "| Faults | Condition | Strict success | Attack success | Runs with unauthorized execution | "
               "Median latency (s) | Mean contaminated work (calls) | Mean discarded work (calls) | "
-              "Mean valid work redone (calls) |",
+              "Mean non-discarded work redone (calls) |",
               "|---|---|---|---|---|---|---|---|---|"]
     for r in conditions:
         lines.append(f"| {r['family'] or 'none'} | {r['condition']} | {_rate(r['strict_k'], r['strict_n'])} | "
