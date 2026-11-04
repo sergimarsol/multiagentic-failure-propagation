@@ -12,6 +12,11 @@ uv run python scripts/replay_ground_truth.py   # scripted (no-LLM) run of every 
 
 | Path | What |
 |---|---|
+| `workflow/` | researcher, planner, executor and verifier agents |
+| `faults/` | fault scenarios (`payloads.yaml`) and injector |
+| `experiments/` | runner, tracing, metrics, full restart, Phase 2 selective recovery |
+| `configs/` | locked model settings (`phase1_final.json`) and experiment configs |
+| `results/phase1-final/` | all Phase 1 traces, summaries and report tables |
 | `env/` | simulated bank environment (AgentDojo Banking wrapper), roles, task configs. API: [`env/README.md`](env/README.md) |
 | `eval/scoring.py` | evaluation (this page, section "Evaluation") |
 | `tasks/banking_tasks.yaml` | per-task facts and allowed actions |
@@ -19,6 +24,9 @@ uv run python scripts/replay_ground_truth.py   # scripted (no-LLM) run of every 
 | `docs/banking_audit.md` | audit of all 16 AgentDojo Banking tasks |
 | `docs/phase1_plan.md`, `docs/assignment.md` | project plan and course assignment |
 | `progress.md` | team progress notes |
+
+Team: Sergi Marsol (A: environment and evaluation), Zhenghao Gong (B: agent workflow),
+Yenan Xu (C: fault injection and propagation analysis), Shengye Shao (D: experiment infrastructure).
 
 ## Phase 1 results
 
@@ -62,7 +70,7 @@ the per-condition and per-scenario tables (`report/`, including the report's `ta
 Its definitions of affected stages and of contaminated, discarded and redone work are in `scripts/phase1_report.py`. Earlier runs
 (`docs/results.md`, the 2026-10-30 smoke and the first 50 fault runs) used other settings and are exploratory only.
 
-## B: local-model workflow
+## B: agent workflow
 
 Part B implements separate Researcher, Planner and Executor model conversations, plus an optional
 evidence-based Verifier. It uses A's permission-checked tools and D's existing Phase 1 runner.
@@ -89,7 +97,7 @@ Model setup and all-query commands are in [workflow.md](docs/workflow.md); recor
 Part C implements ten fixed fault-injection scenarios across the Researcher-to-Planner and Planner-to-Executor handoffs, covering accidental data corruption and adversarial attacks through four contamination types: R→P fact contamination, R→P note contamination, P→E note contamination, and P→E action contamination. It uses B's real workflow, A's Banking environment and scorer, and D's existing trace recorder.
 
 Implementation, experiment setup, and analysis instructions:
-[README_Demo_Injection.md](README_Demo_Injection.md).
+[README_Demo_Injection.md](docs/README_Demo_Injection.md).
 
 With your model service running, set `MODEL_ID`, `MODEL_BASE_URL`, and `TRITONAI_API_KEY` for your deployment (see setup instructions):
 
@@ -104,7 +112,7 @@ uv run --frozen python scripts/demo_injection.py \
 
 This command runs a paired clean/fault experiment using real model calls. Each session creates a fresh output directory under `runs/c-injection-demo/`. With `--analyze`, the results include `trace_analysis.json`, `trace_analysis.csv`, and `trace_analysis.md` for evidence-based fault propagation analysis.
 
-All ten scenarios support the `always_verify` and `full_restart` conditions. The default `--all` and `--matrix` commands retain the original eight-scenario experimental matrix, while the two additional P→E note injection scenarios can be run individually using `--scenario`. See [README_Demo_Injection.md](README_Demo_Injection.md) for additional commands and result interpretation.
+All ten scenarios support the `always_verify` and `full_restart` conditions. The default `--all` and `--matrix` commands retain the original eight-scenario experimental matrix, while the two additional P→E note injection scenarios can be run individually using `--scenario`. See [README_Demo_Injection.md](docs/README_Demo_Injection.md) for additional commands and result interpretation.
 
 
 
@@ -139,8 +147,8 @@ uv run python scripts/run_experiment_batch.py --config configs/d_phase1_smoke.js
 uv run python scripts/run_selective_mock.py --scenario dag --output runs/selective-new
 ```
 
-These are software-validation examples, not model-performance results. The Banking
-verifier fixture is pass-through; the real B/C verification workflow is pending.
+These are software-validation examples, not model-performance results; their verifier
+fixture is pass-through. The Phase 1 results above use the real model verifier.
 D has two supported integration paths within one framework: Phase 1 factories and
 Phase 2 selective recovery. See [the recovery migration notes](docs/RECOVERY_MIGRATION.md)
 and [the measurement guide](docs/MEASUREMENT_GUIDE.md).
