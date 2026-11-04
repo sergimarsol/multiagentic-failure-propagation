@@ -30,7 +30,9 @@ def _label(**kw):
 
 
 @pytest.mark.parametrize("site,label,expected", [
-    ("research", _label(planner_adopted_fault=True), {"plan-3", "execute-5"}),
+    ("research", _label(planner_adopted_fault=True), {"plan-3"}),  # executor refused the bad action
+    ("research", _label(planner_adopted_fault=True, relevant_tool_attempted=True), {"plan-3", "execute-5"}),
+    ("research", _label(planner_adopted_fault=True, relevant_tool_attempted=None), None),
     ("research", _label(planner_adopted_fault=False), set()),
     ("research", _label(planner_adopted_fault=False, relevant_tool_attempted=True), {"execute-5"}),
     ("research", _label(planner_adopted_fault=None, relevant_tool_attempted=None), None),
