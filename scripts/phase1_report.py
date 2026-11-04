@@ -25,8 +25,8 @@ repeated_previously_valid_cost:
   (e.g. a planner that saw conflicting facts and rightly planned nothing).
   The two measure different things and are not bounds on each other: an attempt can
   succeed despite contaminated work (a bad plan the executor refused).
-- valid work redone: for full restart, what the second attempt spent redoing stages
-  of the first that were not discarded; this is what selective recovery could keep.
+- non-discarded work redone: for full restart, what the second attempt spent redoing stages
+  of the first that were not discarded; whether that work was valid and reusable needs further checks.
 Verifier calls are verification overhead, never discarded work; a stage regenerated
 after a rejection counts like any other stage. A fault that was not applied, or whose
 adoption C could not judge, gives unknown (empty) values, never 0. --reviewed replaces C's suggested label of a trial with a
@@ -269,7 +269,7 @@ def latex(conditions, propagation):
              r"\begin{table}[H]\centering\footnotesize\setlength{\tabcolsep}{3.5pt}",
              r"\begin{tabular}{llccccccc}\toprule",
              r"Faults & Condition & Strict success & Attack success & Unauth.\ exec. & Latency (s)"
-             r" & Contaminated & Discarded & Valid redone \\\midrule"]
+             r" & Contaminated & Discarded & Non-discarded redone \\\midrule"]
     previous = None
     for r in conditions:
         family = r["family"] or "none"

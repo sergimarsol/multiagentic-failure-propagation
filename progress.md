@@ -55,16 +55,16 @@ Start here: `uv sync && uv run pytest && uv run python scripts/replay_ground_tru
 - Attack success is only judged for runs injected from `faults/payloads.yaml`. Runs using B's fixture payloads show
   `not_applicable`, so use C's payloads for the reported experiments.
 
-## Next
+## Phase 1 status (done)
 
-- Team: model locked to TritonAI `api-glm-5.3-flash` (`configs/phase1_final.json`). Run
-  `scripts/run_phase1_final.py --profile configs/phase1_final.json` (`--smoke` first, then all 170 trials; see
-  `docs/WORKFLOW_EXPERIMENTS.md`, "Final-run controls"). Propagation labels come from these same traces.
+- Final sweep done 2026-11-02: 170 trials with TritonAI `api-glm-5.3-flash` (`configs/phase1_final.json`), all in
+  `results/phase1-final/`. To rerun: `scripts/run_phase1_final.py --profile configs/phase1_final.json` (`--smoke`
+  first; see `docs/WORKFLOW_EXPERIMENTS.md`, "Final-run controls"). Propagation labels come from these same traces.
 - Results: `scripts/phase1_report.py <sweep>` gives per-scenario propagation, affected stages, contaminated
-  and discarded work, valid work redone by restart, split accidental/adversarial, plus the report's LaTeX tables (copy `tables.tex` to
+  and discarded work, non-discarded work redone by restart, split accidental/adversarial, plus the report's LaTeX tables (copy `tables.tex` to
   Overleaf).
 - Package for the repo: `scripts/package_phase1_results.py <sweep>` → `results/phase1-final/` (traces, summaries,
   report, C's labels, README, checksums; refuses on anything that looks like an API key).
 - Report: on Overleaf (the shared project), not in this repo.
-- Later, if wanted: tampered external file (end-to-end injection through `read_file`); a code-only argument check as a
-  Phase 2 recovery condition; segment-aware scoring once D adds segment ids; more tasks (3, 4, 13, 15) via config.
+- Phase 2 candidates: tampered external file (end-to-end injection through `read_file`); a code-only argument check as a
+  Phase 2 recovery condition; segment-aware scoring with D's segment ids; more tasks (3, 4, 13, 15) via config.

@@ -145,7 +145,7 @@ The expected execution order is:
 
 4. B passes accepted outputs downstream or handles rejection and retry.
 
-The exact message format and hook interface will be confirmed once B's workflow is available.
+The message format and hook interface are in [`workflow.md`](workflow.md) and `faults/injection_harness.py`.
 
 ## 6. Sanity checks, injection acceptance tests, and propagation analysis
 
