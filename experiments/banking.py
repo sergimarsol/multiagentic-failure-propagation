@@ -7,9 +7,12 @@ from .recorder import TraceError
 
 
 class BankingAdapter:
-    def __init__(self, env, recorder, *, segmented_audit=False):
+    def __init__(self, env, recorder, *, segmented_audit=False, segment_on_restore=True):
         self.env, self.recorder = env, recorder
         self.segmented_audit = segmented_audit
+        # A recovery coordinator announces its own segment before restoring; replacing that
+        # ID here would detach the rerun's calls from the announced segment.
+        self.segment_on_restore = segment_on_restore
         self._effective_call_ids = []
         if segmented_audit and env.audit_log():
             raise TraceError("segmented adapter requires a fresh environment audit")
@@ -36,8 +39,10 @@ class BankingAdapter:
         self.env.restore(env_from_state(state))
         if self.segmented_audit:
             self._effective_call_ids = list(path)
-            # Manual restores also start a new segment; the coordinator may assign its own ID.
-            self.recorder.segment_id = new_id("segment")
+            # Manual restores also start a new segment; a coordinator-managed adapter keeps
+            # the segment the coordinator already announced for this restore.
+            if self.segment_on_restore:
+                self.recorder.segment_id = new_id("segment")
 
     def audit_key(self, attempt_id, *, segment_id=None):
         # A's run_id is an execution filter. D's top-level run_id remains unchanged.

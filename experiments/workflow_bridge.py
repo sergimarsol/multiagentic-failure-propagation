@@ -17,6 +17,16 @@ from workflow.integration import BankingEnvironmentAdapter, workflow_report
 from workflow.prompts import PROMPTS, RESEARCH_FORMATS
 
 SITES = {"research_to_plan": "research", "plan_to_execute": "plan"}
+PHASE2_CONDITIONS = {"selective", "full_restart"}
+
+
+def uses_recovery_engine(config):
+    """selective always; full_restart only when it names a recovery_policy (Phase 2 baseline).
+
+    full_restart without a policy stays on the unchanged Phase 1 fresh-factory runner.
+    """
+    return config["condition"] == "selective" or (
+        config["condition"] == "full_restart" and "recovery_policy" in config)
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -35,12 +45,17 @@ def source_hash():
 def prepare_config(config):
     """Resolve defaults and bind recorded controls BEFORE any model request."""
     c = detached(config)
-    if c.get("condition") not in {"clean", "clean_verify", "fault", "full_restart", "always_verify"}:
-        raise ValueError("B bridge supports Phase 1 conditions only")
+    if c.get("condition") not in {"clean", "clean_verify", "fault", "full_restart", "always_verify", "selective"}:
+        raise ValueError("B bridge supports Phase 1 conditions and Phase 2 selective recovery only")
+    if c["condition"] == "selective":
+        c.setdefault("recovery_policy", {})
+    if "recovery_policy" in c and c["condition"] not in PHASE2_CONDITIONS:
+        raise ValueError("recovery_policy applies to selective and full_restart only")
     if c.get("task_id") not in {"user_task_0", "user_task_2"}:
         raise ValueError("B bridge supports selected Banking tasks 0 and 2")
     allowed = {"task_id", "condition", "scenario_id", "comparison_group_id", "repeat_index",
-               "workflow", "limits", "synthetic", "fault", "notification_boundary", "initial_state_hash"}
+               "workflow", "limits", "synthetic", "fault", "notification_boundary", "initial_state_hash",
+               "method_id", "recovery_policy"}
     if set(c) - allowed:
         raise ValueError("unsupported B bridge controls: " + str(sorted(set(c) - allowed)))
     w = c.get("workflow", {})
@@ -120,6 +135,11 @@ def execute_workflow(config, directory, *, client_factory=None, api_key="ollama"
         raise ValueError("actual client configuration differs from experiment")
     injector, spec = _injector(c)
     session_config = WorkflowConfig(**c["workflow"]["session"])
+    if uses_recovery_engine(c):
+        from .banking_selective import run_banking_phase2
+        return run_banking_phase2(directory, task_id=c["task_id"], condition=c["condition"], client=client,
+            session_config=session_config, injector=injector, injection_spec=spec,
+            synthetic=c["synthetic"], experiment_config=c)
     result = run_phase1(directory, task_id=c["task_id"], condition=c["condition"],
         environment_adapter=BankingEnvironmentAdapter(c["task_id"]),
         create_session=lambda: BankingWorkflowSession(client, session_config, injection_spec=spec),

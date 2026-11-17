@@ -125,6 +125,7 @@ Choose the document for your task:
 | Run B with D configuration, budgets and summaries | [D/B experiment entry point](docs/WORKFLOW_EXPERIMENTS.md) |
 | Connect A/B/C for Phase 1 | [Minimum integration contract](PHASE1_INTEGRATION.md) |
 | Understand modules, experiments and recovery | [Shared experiment protocol](docs/EXPERIMENT_PROTOCOL.md) |
+| Run Phase 2 selective recovery on Banking; open requests to A/B/C | [Phase 2 integration](docs/PHASE2_INTEGRATION.md) |
 | Check implementation and validation status | [Capability status](docs/CAPABILITIES.md) |
 | Run automated checks and understand merge protection | [CI guide](docs/CI.md) |
 

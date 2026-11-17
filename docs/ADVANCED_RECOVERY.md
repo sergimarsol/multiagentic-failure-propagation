@@ -11,8 +11,9 @@ for algorithm, adapter contracts, failure semantics and runnable examples.
 The new path includes dependency invalidation, consistent point selection, context
 restoration, pure-result reuse checks, state-version/lineage checks, ordered reruns
 and explicit fresh-factory fallback. These mechanisms have executable toy-adapter
-tests. Real B contexts, real C injection and real Banking selective recovery are
-**not integrated**. No semantic Banking rules were added by D.
+tests. Real B stages, C injection and A scoring are connected in
+`experiments/banking_selective.py`; see [PHASE2_INTEGRATION.md](PHASE2_INTEGRATION.md).
+That path is validated with a scripted client only. No semantic Banking rules were added by D.
 
 Snapshots are synchronous at C0–Cn completed-node boundaries. No node-internal restore,
 VM cloning, asynchronous checkpoints, general effects replay or automatic detection.

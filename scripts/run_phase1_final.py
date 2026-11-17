@@ -67,8 +67,9 @@ def git(*args):
     return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True).stdout.strip()
 
 
-def main():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def main(plan=plan, description=__doc__, smoke_scenario=None):
+    """plan/description/smoke_scenario let the Phase 2 script reuse this resumable sweep loop."""
+    p = argparse.ArgumentParser(description=description, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--model", help="model identifier served at --base-url")
     p.add_argument("--base-url", default="http://127.0.0.1:11434/v1")
@@ -103,7 +104,8 @@ def main():
              "temperature": a.temperature, "max_tokens": a.max_tokens, "timeout_seconds": a.request_timeout}
     configs = plan(model, a.runtime or "scripted-test-client", 1 if a.smoke else a.repeats, a.scripted)
     if a.smoke:
-        first = next(c["scenario_id"] for c in configs if c["task_id"] == "user_task_0" and "fault" in c)
+        first = smoke_scenario or next(
+            c["scenario_id"] for c in configs if c["task_id"] == "user_task_0" and "fault" in c)
         configs = [c for c in configs if c["task_id"] == "user_task_0" and c["scenario_id"] in ("clean", first)]
 
     info = {"commit": git("rev-parse", "HEAD"), "dirty": bool(dirty), "python": platform.python_version(),
