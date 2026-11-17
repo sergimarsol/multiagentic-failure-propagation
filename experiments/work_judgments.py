@@ -225,8 +225,6 @@ def analyze_work(run, output, *, judge=None, reference_path=REFERENCE):
     baseline = summarize_run(run, write=False)
     streams, issues = _read(run)
     events = streams["events"]
-    if any(e["event_type"] == "checkpoint_attempt_started" for e in events):
-        raise ValueError("Phase 2 checkpoint validity requires segment-aware adjudication; not supported by this adapter yet")
     old = {k: v for e in streams["evaluations"] for k, v in e["work_validity"].items() if v != "unknown"}
     judgments, overlays, packets = [], [], []
     start_call = len(judge.calls) if judge else 0

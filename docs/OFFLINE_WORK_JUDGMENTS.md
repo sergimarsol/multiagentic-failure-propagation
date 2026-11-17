@@ -8,7 +8,22 @@ A judgment applies to one **original node execution**, including its own generat
 
 For example, rejecting conflicting amounts may be valid work even when the bill remains unpaid. A Researcher output altered *after generation* by C is not automatically invalid Researcher work. Nodes may contain both useful and incorrect substeps; this adapter uses the existing node-granularity metric, not a claim that every token of an invalid node was useless.
 
-The adapter currently supports Phase 1 runs (including full restart and verification). The optional overlay argument on D's summarizer is backward compatible. Phase 2 checkpoint runs are explicitly rejected by this adapter pending segment-aware semantic adjudication; it does not change or bypass Phase 2's reuse checks.
+The adapter supports Phase 1 runs (including full restart and verification) and Phase 2 recovery runs. The optional overlay argument on D's summarizer is backward compatible. It does not change or bypass Phase 2's reuse checks.
+
+In a Phase 2 run every node execution is judged on its own, including reruns after a restore. A's scores for the initial path and for the effective path after recovery both feed the rules, so an unauthorized call is attributed to the execution that made it. Executions of a failed recovery round did not complete and stay unknown.
+
+Every summary also carries `work_breakdown` (`experiments/recovery_work.py`). It places each node execution in one disposition, taken from the trace alone, and reports cost per disposition and judged validity:
+
+| Disposition | Meaning |
+| --- | --- |
+| `kept` | no recovery ran |
+| `retained` | initial work still on the final path |
+| `discarded` | initial work replaced by recovery |
+| `recovery_effective` | rerun on the final path |
+| `recovery_abandoned` | rerun in a recovery round that failed |
+| `unresolved` | recovery started but did not complete |
+
+`repeated_valid`, `repeated_invalid` and `repeated_unknown` are reruns of a stage, grouped by the judgment of the discarded initial execution they replaced. Without judgments every validity is `unknown`. Discarded work is not assumed incorrect, and a stage whose output C replaced after generation can be discarded and valid.
 
 ## Inputs and judgments
 

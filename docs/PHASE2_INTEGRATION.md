@@ -56,7 +56,24 @@ in A's attack judgment. Only selective removes it from the final simulated state
 - **Failures.** A retryable provider error during a rerun retries the same checkpoint, then
   an older one, then full restart (per `recovery_policy`). The trial budget is shared.
 
-Tests: `tests/test_banking_selective.py`.
+Tests: `tests/test_banking_selective.py`, `tests/test_phase2_report.py`.
+
+## Analysis and packaging
+
+```sh
+# Work validity per node execution: rules only, or add --llm (see OFFLINE_WORK_JUDGMENTS.md).
+uv run python scripts/judge_work.py runs/phase2 --output runs/phase2-work
+
+# Tables: outcome, recovery cost, matched selective/full-restart pairs, work categories, overhead.
+uv run python scripts/phase2_report.py runs/phase2 --judgments runs/phase2-work
+
+# Committed results: traces, summaries, report, judgments, checksums -> results/phase2/.
+uv run python scripts/package_phase2_results.py runs/phase2 --judgments runs/phase2-work
+```
+
+The report keeps unknown values empty, lists unmatched pairs instead of pairing them, and
+reports judge cost separately from agent cost. Definitions are in the header of
+`scripts/phase2_report.py`.
 
 ## Known limits
 
@@ -66,7 +83,9 @@ Tests: `tests/test_banking_selective.py`.
   workflow with independent branches.
 - Verification is not part of the recovery path. `always_verify` uses the Phase 1 runner.
 - All simulated Banking effects are treated as restorable.
-- The offline work-validity judge still rejects Phase 2 traces (D, next).
+- Work validity is unknown for most stages unless the LLM judge is run; rules only establish
+  unauthorized executions and wrong research facts. Judged values need a spot check.
+- The report has no LaTeX tables yet.
 - No real-model Phase 2 run has been made yet.
 
 ## Requests to each owner

@@ -241,6 +241,8 @@ def summarize_run(directory, *, write=True, evaluation_overlay=None):
                                      if attempts and r["attempt_id"] == attempts[0]), None),
         verifier_decisions=len(decisions),
         verifier_rejections=sum(e["data"].get("accepted") is False for e in decisions))
+    from .recovery_work import work_breakdown
+    summary["work_breakdown"] = work_breakdown(events, streams["artifacts"], validity)
     summary["measurements"] = {
         "recovery_latency_ms": {"status": "measured" if recovery_ends else "error" if recoveries else "not_applicable", "value": summary["recovery_latency_ms"]},
         "affected_nodes": {"status": "measured" if propagation else "not_evaluated", "value": summary["observed_affected_nodes"]},

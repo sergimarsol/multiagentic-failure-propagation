@@ -25,7 +25,7 @@ No B/C implementation or A business rules were changed for this work.
 | Optional bounded checkpoint retry and older-point escalation | Implemented; Phase 2 defaults: 1 retry / 3 points | Toy failure-path tests only; Phase 1 unchanged |
 | Phase 2 policy provenance and batch metrics | Implemented; additive exports and actual-policy grouping | Three-arm toy batch and reporting regressions; no real model results |
 | Irreversible effects | Report and reject unsafe reset | Toy tests; no external-effect compensation |
-| Banking propagation/work-validity judgment | C's rule-based propagation labels; optional offline LLM judge ([OFFLINE_WORK_JUDGMENTS.md](OFFLINE_WORK_JUDGMENTS.md)) | Labels used in Phase 1 results; judged work validity planned for Phase 2 |
+| Banking propagation/work-validity judgment | C's rule-based propagation labels; optional offline LLM judge ([OFFLINE_WORK_JUDGMENTS.md](OFFLINE_WORK_JUDGMENTS.md)) | Labels used in Phase 1 results; judge and per-disposition work breakdown run on Phase 2 traces (scripted validation) |
 | Actual Banking multi-agent selective recovery | Implemented for the three-stage chain ([PHASE2_INTEGRATION.md](PHASE2_INTEGRATION.md)) | Real A simulator/scorer, B stages and C payloads with a scripted client; no real-model run yet |
 | Dynamic/concurrent graph, intra-node restore, VM cloning | Not implemented | Outside declared scope |
 | Automated detection | Not implemented | Controlled oracle only |
