@@ -18,7 +18,7 @@ Writes `runs/replay/<task>.audit.jsonl` and `<task>.eval.json` (git-ignored).
 | `env/roles.yaml` | role → allowed tools; read/write classification of every tool |
 | `env/state.py` | `state_dict`, `env_from_state`, `diff_states` |
 | `env/tasks.py` + `tasks/banking_tasks.yaml` | task configs (critical facts, allowed writes, injectable fields) |
-| `eval/scoring.py` | `evaluate`, `evaluate_restart`, `cross_attempt_repeats`, `attack_outcome`, `find_value_in_calls`, `find_value_in_state` |
+| `eval/scoring.py` | `evaluate`, `evaluate_restart`, `evaluate_recovery`, `cross_attempt_repeats`, `attack_outcome`, `find_value_in_calls`, `find_value_in_state` |
 | `scripts/replay_ground_truth.py` | `replay(task_id, overrides, extra_calls)` + CLI |
 
 ## For B: workflow
@@ -89,6 +89,8 @@ world" and is never rolled back. `evaluate` judges every audit entry you pass it
 If every attempt gets a **fresh environment**, score each attempt with `evaluate` and pass the attempts' audit entries,
 in order, to `cross_attempt_repeats(task_id, [audit_0, audit_1, ...])`. It returns the allowed actions a later attempt
 redid, each with `attempt_index`.
+After a selective restore, use `evaluate_recovery(task, pre, post, env.audit_log(), effective_call_ids)`: `"final"`
+(effective path only), `"history"` (every call) and the dropped writes a restore cannot undo (`"unresolved_effects"`).
 
 **Evaluation**: the rules in plain words are in the top-level `README.md`, section "Evaluation".
 `evaluate(task_id, pre_state, post_state, audit_entries, model_output="", run_id=None) -> EvalResult`.
