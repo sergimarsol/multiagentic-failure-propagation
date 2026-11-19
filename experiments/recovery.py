@@ -126,12 +126,14 @@ class RecoveryPointManager:
         point, environment, execution = self.load(checkpoint_id)
         started = time.perf_counter()
         try:
+            # An environment may keep effects a restore cannot undo (e.g. money already sent).
+            expected = getattr(self.environment, "expected_restore", lambda e: e)(environment)
             self.environment.restore(environment)
             report = self.workflow.clear_runtime_caches()
             if not isinstance(report, dict) or report.get("complete") is not True:
                 raise TraceError("workflow did not confirm cache cleanup")
             self.workflow.restore_state(execution)
-            if (fingerprint(self.environment.snapshot()) != fingerprint(environment)
+            if (fingerprint(self.environment.snapshot()) != fingerprint(expected)
                     or fingerprint(self.workflow.export_state()) != fingerprint(execution)):
                 raise TraceError("restored environment/context differs from checkpoint")
         except Exception as exc:

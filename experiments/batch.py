@@ -51,7 +51,7 @@ def _clean_pair_key(config):
     # Only deliberate treatments differ from the common clean counterpart.
     # Unknown future configuration fields are controls by default.
     treatments = {"condition", "scenario_id", "fault", "method_id", "recovery_policy",
-                  "notification_boundary"}
+                  "notification_boundary", "restore_mode"}
     return fingerprint({k: v for k, v in config.items() if k not in treatments})
 
 

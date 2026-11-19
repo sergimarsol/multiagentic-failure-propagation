@@ -267,6 +267,47 @@ def test_phase2_plan_has_late_and_early_recovery_methods():
     from scripts.run_phase2_banking import plan
     configs = plan({"model": "m", "base_url": "http://127.0.0.1:1/v1"}, "rt", 1, True)
     methods = {c.get("method_id") for c in configs if c["condition"] in ("selective", "full_restart")}
-    assert methods == {"selective_dag", "full_restart_dag", "selective_dag_early", "full_restart_dag_early"}
+    assert methods == {"selective_dag", "full_restart_dag", "selective_dag_early", "full_restart_dag_early",
+                       "selective_dag_bank", "full_restart_dag_bank"}
     assert all(c.get("notification_boundary") == "after_faulty_handoff"
                for c in configs if str(c.get("method_id", "")).endswith("_early"))
+    bank = [c for c in configs if str(c.get("method_id", "")).endswith("_bank")]
+    assert bank and all(c["restore_mode"] == "real_bank" and "notification_boundary" not in c for c in bank)
+
+
+def _transactions(path, attempt):
+    finals = [e for e in events(path, "environment_finalized") if e["attempt_id"] == attempt]
+    return finals[-1]["data"]["final_state"]["transactions"]
+
+
+@pytest.mark.parametrize("condition", ["selective", "full_restart"])
+def test_real_bank_restore_keeps_money_already_sent(tmp_path, condition):
+    scenario = LATE["user_task_0"]
+    runs = {mode: execute_workflow(config(condition, scenario=scenario, recovery_policy={}, restore_mode=mode),
+                                   tmp_path / mode, client_factory=factory)
+            for mode in ("simulated", "real_bank")}
+    sim, bank = runs["simulated"], runs["real_bank"]
+    assert sim["final_strict_success"] is True and sim["attack"]["harm_in_final_state"] is False
+    # The wrong payment cannot be taken back: it stays next to the corrected one.
+    assert bank["executed_strategy"] == condition and bank["recovery_completed"] is True
+    assert bank["final_strict_success"] is False and bank["attack"]["harm_in_final_state"] is True
+    final_attempt = bank["attempts"][-1]["attempt_id"]
+    assert len(_transactions(tmp_path / "real_bank", final_attempt)) == \
+        len(_transactions(tmp_path / "simulated", sim["attempts"][-1]["attempt_id"])) + 1
+    assert len(bank["unresolved_effects"]) == 1 and not bank["execution_errors"]
+    assert json.loads((tmp_path / "real_bank" / "manifest.json").read_text())["restore_mode"] == "real_bank"
+
+
+def test_real_bank_restore_still_undoes_compensable_updates(tmp_path):
+    scenario = LATE["user_task_2"]
+    s = execute_workflow(config("selective", "user_task_2", scenario, restore_mode="real_bank"),
+                         tmp_path, client_factory=factory)
+    assert s["final_strict_success"] is True and len(s["compensated_effects"]) == 1
+    assert not s["unresolved_effects"]
+
+
+def test_restore_mode_requires_the_recovery_engine(tmp_path):
+    for c in (config("fault", scenario=LATE["user_task_0"], restore_mode="real_bank"),
+              config("selective", scenario=LATE["user_task_0"], restore_mode="somewhere")):
+        with pytest.raises(ValueError):
+            execute_workflow(c, tmp_path, client_factory=factory)

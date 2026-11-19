@@ -70,6 +70,7 @@ class DagWorkflow:
             position=0, artifact_map={}, config_hash=self.config_hash,
             resources={k: {"version": fingerprint(v), "source": None} for k, v in initial.items()})
         self.initial_fingerprint = fingerprint(initial)
+        self.initial_snapshot = detached(initial)
         self.points = RecoveryPointManager(recorder, environment, self)
 
     def export_state(self):
@@ -416,7 +417,9 @@ class SelectiveRecoveryCoordinator:
                   "fallback_reason": None, "completed": False, "task_success": None,
                   "checkpoint_attempts": 0, "checkpoint_retry_count": 0, "checkpoint_id": None,
                   "unresolved_effects": [], "retained_artifact_ids": [], "reused_artifact_ids": [], "rerun_node_ids": []}
-        original_initial = w.initial_fingerprint
+        # A fresh restart starts from the initial state, except effects the environment cannot
+        # undo (e.g. money already sent under a real-bank restore), which it must keep.
+        original_initial = fingerprint(getattr(w.environment, "expected_restore", lambda s: s)(w.initial_snapshot))
         # Audit evidence survives every rollback and every recovery branch.
         def refresh_unresolved_effects():
             effects = [e["event_id"] for e in rec.records("events")
