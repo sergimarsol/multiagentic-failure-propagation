@@ -109,12 +109,21 @@ def _path(label, workflow, attempt, evaluation):
 
 
 def _history(rec, task_id, paths, environments, final_attempt, result):
-    """Union of the scored paths; calls on no scored path stay explicitly unscored."""
-    def union(key):
-        values = [p[key] for p in paths]
-        return sorted({v for group in values for v in group}) if all(v is not None for v in values) else None
+    """A's recovery scoring (eval.scoring.evaluate_recovery) over every audited call.
+
+    Harm is judged on every call, including branches a restore dropped; writes the effective
+    path dropped are listed as unresolved (money sent) or compensated (updates).
+    """
+    from eval.scoring import evaluate_recovery
     audit = {e["call_id"]: e for env in environments for e in env.audit_log()}
-    scored = {c for p in paths for c in p["call_ids"]}
+    final_env = environments[-1]
+    try:
+        scored = evaluate_recovery(task_id, final_env.initial_state, final_env.snapshot(),
+                                   list(audit.values()), paths[-1]["call_ids"])
+        history = scored["history"]
+    except Exception as exc:
+        scored, history = None, None
+        rec.log("attempt_failed", final_attempt, data={"error": repr(exc), "phase": "history_evaluation"})
     repeats = {"status": "not_evaluated", "actions": None}
     if len(paths) == 2:
         try:
@@ -129,17 +138,19 @@ def _history(rec, task_id, paths, environments, final_attempt, result):
                                     "path": paths[row["attempt_index"]]["label"]} for row in rows]}
         except Exception as exc:
             repeats = {"status": "error", "actions": None, "error": repr(exc)}
-    permissions = [p["permission_violations"] for p in paths]
+    ids = lambda key: [e["call_id"] for e in getattr(history, key)] if history else None
     return Evaluation(run_id=rec.run_id, attempt_id=final_attempt, evaluation_id=new_id("evaluation"),
-        scope="history", evaluator="D.effective_path_union",
-        permission_violations=[v for group in permissions for v in group]
-            if all(v is not None for v in permissions) else None,
-        unauthorized_attempt_ids=union("unauthorized_attempt_ids"),
-        unauthorized_execution_ids=union("unauthorized_execution_ids"),
+        scope="history", evaluator="A.evaluate_recovery",
+        strict_success=history.strict_success if history and not history.warnings else None,
+        permission_violations=history.permission_violations if history else None,
+        unauthorized_attempt_ids=ids("unauthorized_attempted"),
+        unauthorized_execution_ids=ids("unauthorized_executed"),
         evidence_ids=sorted(audit),
-        details={"policy": "effective_path_union", "paths": paths,
-                 "unscored_abandoned_call_ids": sorted(set(audit) - scored),
-                 "external_effect_recovery": "not_evaluated", "cross_attempt_repeats": repeats})
+        details={"policy": "all_audited_calls", "paths": paths,
+                 "external_effect_recovery": "evaluated" if scored else "not_evaluated",
+                 "unresolved_effects": [e["call_id"] for e in scored["unresolved_effects"]] if scored else None,
+                 "compensated_effects": [e["call_id"] for e in scored["compensated_effects"]] if scored else None,
+                 "cross_attempt_repeats": repeats})
 
 
 def run_banking_phase2(directory, *, task_id, condition, client, session_config=None, injector=None,
@@ -173,7 +184,7 @@ def run_banking_phase2(directory, *, task_id, condition, client, session_config=
     session_config = session_config or WorkflowConfig()
     rec = Recorder(directory, {"run_id": new_id("run"), "task_id": task_id, "condition": condition,
         "synthetic": synthetic, "runner": RUNNER_VERSION, "recovery_policy": policy,
-        "limits": asdict(limits), "history_policy": "effective_path_union",
+        "limits": asdict(limits), "history_policy": "all_audited_calls",
         "notification_boundary": notification_boundary, **provenance(experiment_config)})
     rec.budget = Budget(limits)
     started = tick = perf_counter()

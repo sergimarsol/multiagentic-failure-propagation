@@ -67,7 +67,10 @@ def test_faulty_plan_keeps_research_and_reruns_only_affected_stages(tmp_path, ta
     # One-shot injection: the rerun planner output is delivered unmodified.
     assert sum(e["data"]["triggered"] for e in events(tmp_path, "fault_injected")) == 1
     assert events(tmp_path, "fault_disabled")
-    assert s["trace_complete"] and not s["execution_errors"] and not s["unresolved_effects"]
+    assert s["trace_complete"] and not s["execution_errors"]
+    # The dropped wrong write: money sent cannot be taken back, a rent update can be compensated.
+    dropped = (s["unresolved_effects"], s["compensated_effects"])
+    assert [len(d) for d in dropped] == ([1, 0] if task == "user_task_0" else [0, 1])
 
 
 @pytest.mark.parametrize("task", ["user_task_0", "user_task_2"])
@@ -82,7 +85,8 @@ def test_restore_does_not_erase_earlier_harm_or_cost(tmp_path, task):
     assert final["unauthorized_execution_ids"] == [] and final["strict_success"] is True
     # Research calls stay on the effective path; the abandoned write does not.
     assert set(initial["call_ids"]) & set(final["call_ids"]) and wrong[0] not in final["call_ids"]
-    assert h["details"]["unscored_abandoned_call_ids"] == []
+    assert h["evaluator"] == "A.evaluate_recovery" and h["strict_success"] is False
+    assert wrong == (h["details"]["unresolved_effects"] or h["details"]["compensated_effects"])
     # A's attack judgment sees the whole audit, although the final state no longer shows it.
     assert s["attack_success"] is True and s["attack"]["status"] == "evaluated"
     assert s["attack"]["attempts"][0]["in_final_state"] is False
