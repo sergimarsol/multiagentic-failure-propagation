@@ -129,7 +129,7 @@ def test_judgments_fill_validity_and_package_is_self_describing(sweep, tmp_path)
     readme = (out / "README.md").read_text()
     assert "Validity from offline judgments" in readme and "work_judgments/" in readme
     assert (out / "SHA256SUMS").exists() and (out / "work_judgments" / "index.json").exists()
-    assert len(list((out / "trials").glob("*/run_0000/checkpoints/*/checkpoint.json"))) > 0
+    assert not list((out / "trials").glob("*/run_0000/checkpoints")) and list((out / "trials").glob("*/run_0000/events.jsonl"))
     # The package rebuilds from itself, without the original sweep or judgment directories.
     rebuilt = build(out, tmp_path / "rebuilt", out / "work_judgments")[0]
     assert {r["trial"]: r["discarded_invalid_calls"] for r in rebuilt}[selective["trial"]] == 3

@@ -3,7 +3,7 @@
   uv run python scripts/package_phase2_results.py runs/phase2 --judgments runs/phase2-work
 
 Builds the report (scripts/phase2_report.py), then copies run_info.json, summary/,
-report/, every trial and every interrupted trial into results/phase2/ with the report as
+report/, every trial and every interrupted trial (without checkpoint files) into results/phase2/ with the report as
 README.md and SHA256SUMS. --judgments also copies the offline work judgments
 (scripts/judge_work.py output) into work_judgments/. Failed and interrupted trials are
 kept. Refuses to write anything if a file looks like it contains an API key.
@@ -44,7 +44,8 @@ def readme(info, model, report, rows, interrupted, judged, where="results/phase2
               "- `run_info.json`: commit, settings, machine and the full list of planned trials.",
               "- `summary/`: D's `runs.csv` and `condition_summary.csv` (all metrics, Wilson intervals).",
               "- `report/`: `trials.csv`, `conditions.csv`, `pairs.csv`, `REPORT.md`.",
-              "- `trials/<trial>/run_0000/`: full traces (events, artifacts, evaluations, checkpoints, manifest)."]
+              "- `trials/<trial>/run_0000/`: full traces (events, artifacts, evaluations, manifest). Checkpoint "
+              "files are left out: the events record each checkpoint, and the report does not need them."]
     if judged:
         lines.append("- `work_judgments/`: offline work-validity judgments and their separate cost.")
     lines += ["- `SHA256SUMS`: checksums of every file here.", "",
@@ -80,7 +81,9 @@ def main(argv=None):
     shutil.copy2(sweep / "run_info.json", staging / "run_info.json")
     for name in ("summary", "report", "trials", "interrupted"):
         if (sweep / name).exists():
-            shutil.copytree(sweep / name, staging / name)
+            # Checkpoints are only needed during recovery; the trace records when each was
+            # taken, its size and timings, and the report rebuilds identically without them.
+            shutil.copytree(sweep / name, staging / name, ignore=shutil.ignore_patterns("checkpoints"))
     if a.judgments:
         shutil.copytree(a.judgments, staging / "work_judgments")
     interrupted = sorted(d.name for d in (sweep / "interrupted").iterdir()) if (sweep / "interrupted").exists() else []
