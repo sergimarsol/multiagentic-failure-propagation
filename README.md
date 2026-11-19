@@ -236,6 +236,13 @@ writes that executed always fail it.
     reset cannot undo a real payment.
   - When all attempts share one environment with a reset in between, `evaluate_restart` gives both views: *rerun only*
     and *full history*. The full history lists repeats in `repeated_across_runs`, and they fail its strict success.
+  - After a **selective restore** (Phase 2), `evaluate_recovery` scores the *final* state on the effective path only
+    and the *history* on every call, including calls a restore dropped. Dropped writes are also listed by what a real
+    bank could do about them: `unresolved_effects` (money sent: `send_money`) and `compensated_effects` (updates
+    and scheduled payments, which another update could undo). Classes: `EFFECT_RECOVERY` in `env/tasks.py`.
+  - `BankingEnv.restore(snapshot, keep_irreversible=True)` restores like a real bank would: money already sent stays.
+    A kept payment is then judged as part of the final state. Restoring matters for shared state: in task 2, a
+    rerun researcher reading an unrestored rent of 1300 derives 1400 (`tests/test_recovery_scoring.py`).
 - **The executor cannot read.** Every fact must flow researcher → planner → executor, so an injected fault cannot be
   silently bypassed by the executor re-reading the source. That would hide propagation.
 - **Free fields stay free.** A payment's subject and date are not checked (AgentDojo doesn't check them either).

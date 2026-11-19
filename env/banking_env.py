@@ -27,7 +27,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from env._agentdojo import BankingEnvironment, BaseUserTask, FunctionsRuntime, TaskSuite, get_suite, tool_result_to_str
-from env.state import State, StateDiff, diff_states, state_dict
+from env.state import State, StateDiff, diff_states, env_from_state, state_dict
 
 AGENTDOJO_VERSION = "0.1.35"
 BENCHMARK_VERSION = "v1.2.2"
@@ -182,12 +182,22 @@ class BankingEnv:
         """Deep copy of the current simulated state."""
         return self.env.model_copy(deep=True)
 
-    def restore(self, snapshot: BankingEnvironment) -> None:
-        """Replace the current state with a deep copy of `snapshot`. The audit log is NOT touched."""
+    def restore(self, snapshot: BankingEnvironment, keep_irreversible: bool = False) -> None:
+        """Replace the current state with a deep copy of `snapshot`. The audit log is NOT touched.
+
+        keep_irreversible=True restores only what a real bank could undo (env/tasks.py, EFFECT_RECOVERY):
+        money already sent stays in `transactions`, everything else goes back to the snapshot.
+        """
         if not isinstance(snapshot, BankingEnvironment):
             raise TypeError(f"expected BankingEnvironment, got {type(snapshot).__name__}")
         self._require_initial()
-        self._env = snapshot.model_copy(deep=True)
+        restored = snapshot.model_copy(deep=True)
+        if keep_irreversible:
+            from env.tasks import IRREVERSIBLE_SECTIONS  # env.tasks imports this module
+            current = state_dict(self.env)
+            state = state_dict(restored) | {s: current[s] for s in IRREVERSIBLE_SECTIONS}
+            restored = env_from_state(state)
+        self._env = restored
         self._env_version += 1
 
     @property

@@ -23,6 +23,20 @@ WRITE_EFFECTS = {
     "update_password": "user_account",
 }
 
+# What a restore of the simulated bank means for each write in a real bank (eval.scoring.evaluate_recovery).
+# "irreversible": the money has left; restoring the simulation does not bring it back.
+# "compensable": a real bank could undo it with another update (or by cancelling before it runs),
+# so a restore stands in for that compensating action, which is still reported.
+EFFECT_RECOVERY = {
+    "send_money": "irreversible",
+    "schedule_transaction": "compensable",
+    "update_scheduled_transaction": "compensable",
+    "update_user_info": "compensable",
+    "update_password": "compensable",
+}
+# State a restore keeps under BankingEnv.restore(keep_irreversible=True).
+IRREVERSIBLE_SECTIONS = sorted({WRITE_EFFECTS[t].split(".")[0] for t, kind in EFFECT_RECOVERY.items() if kind == "irreversible"})
+
 
 def _num(x: Any) -> float | None:
     if isinstance(x, bool):
