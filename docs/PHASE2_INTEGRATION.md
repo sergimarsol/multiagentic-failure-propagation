@@ -54,6 +54,9 @@ in A's attack judgment. Only selective removes it from the final simulated state
   also prevent the wrong action. For a faulty plan, selective reruns only the planner
   (keeping research) and then runs the executor; full restart reruns research too. Early
   notice is accepted only on the recovery engine; the report pairs runs by notice timing.
+  Early notice is a best case: the oracle names the faulty result for free, which a real
+  system cannot do, while always_verify pays to catch it. Present early-notice rows as an
+  upper bound, not as a fair win over always_verify (the report labels them so).
 - **Scores.** A's scorer judges (1) the initial path, (2) the effective path after recovery.
   The history evaluation is the union of both; calls on neither path are listed as
   `unscored_abandoned_call_ids`. `environment_finalized` carries the full audit, so A's
