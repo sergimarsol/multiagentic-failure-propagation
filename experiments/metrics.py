@@ -201,7 +201,11 @@ def summarize_run(directory, *, write=True, evaluation_overlay=None):
         "requested_strategy": recoveries[-1]["data"].get("requested_strategy", "full_restart") if recoveries else None,
         "executed_strategy": recovery_ends[-1]["data"].get("executed_strategy", "full_restart") if recovery_ends else None,
         "fallback_reason": recovery_ends[-1]["data"].get("fallback_reason") if recovery_ends else None,
-        "unresolved_effects": recovery_ends[-1]["data"].get("unresolved_effects") if recovery_ends else None,
+        # A's judgment of dropped writes when the runner recorded it; otherwise the engine's own list.
+        "unresolved_effects": history["details"]["unresolved_effects"]
+            if history and history.get("details", {}).get("unresolved_effects") is not None
+            else recovery_ends[-1]["data"].get("unresolved_effects") if recovery_ends else None,
+        "compensated_effects": history.get("details", {}).get("compensated_effects") if history else None,
         "execution_errors": [e["data"] for e in events if e["event_type"] in {"workflow_failed", "attempt_failed", "recovery_error"}],
         "budget_exhausted": any(e["event_type"] == "budget_exhausted" or "BudgetExceeded" in str(e["data"].get("error", "")) for e in events),
         "trace_issues": problems,

@@ -58,9 +58,12 @@ in A's attack judgment. Only selective removes it from the final simulated state
   system cannot do, while always_verify pays to catch it. Present early-notice rows as an
   upper bound, not as a fair win over always_verify (the report labels them so).
 - **Scores.** A's scorer judges (1) the initial path, (2) the effective path after recovery.
-  The history evaluation is the union of both; calls on neither path are listed as
-  `unscored_abandoned_call_ids`. `environment_finalized` carries the full audit, so A's
-  `attack_outcome` still sees actions that a restore removed from the state.
+  The history evaluation is A's `evaluate_recovery` over every audited call, including
+  branches a restore dropped. Dropped writes are listed as `unresolved_effects` (money sent,
+  which a real bank cannot take back) or `compensated_effects` (updates another update could
+  undo); the summary and report take unresolved effects from it. Nodes stay restorable: the
+  simulation can be reset, and the effects are reported, not hidden. `environment_finalized`
+  carries the full audit, so A's `attack_outcome` still sees actions that a restore removed.
 - **Trace.** Every event has `execution_segment_id`. `segment_started`, `checkpoint_restored`,
   `artifact_retained`, `reuse_checked`, `recovery_started/finished` describe the path.
 - **Failures.** A retryable provider error during a rerun retries the same checkpoint, then
