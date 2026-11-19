@@ -40,7 +40,8 @@ TREATMENTS = {"condition", "method_id", "recovery_policy"}
 WORK = ("retained_valid", "retained_invalid", "retained_unknown", "discarded_valid", "discarded_invalid",
         "discarded_unknown", "repeated_valid", "repeated_unknown")
 RATES = (("strict", "final_strict"), ("initial_strict", "initial_strict"), ("attack", "attack_success"),
-         ("harm_in_final_state", "harm_in_final_state"), ("recovered", "recovered"))
+         ("harm_in_final_state", "harm_in_final_state"), ("recovered", "recovered"),
+         ("triggered", "injection_triggered"))
 NUMERIC = ("model_calls", "tool_calls", "tokens", "latency_s", "initial_latency_s", "recovery_model_calls",
            "recovery_tool_calls", "recovery_tokens", "recovery_latency_s", "recomputed_stages", "retained_stages",
            "checkpoint_attempts", "unauthorized_executions", "repeated_actions", "tracking_overhead_ms",
@@ -107,7 +108,7 @@ def trial_row(trial, judgments):
     recovery = bool(s.get("recovery_attempted"))
     row.update(
         trace_complete=s.get("trace_complete"), initial_strict=s.get("initial_strict_success"),
-        final_strict=s.get("final_strict_success"), injection_triggered=s.get("injection_triggered"),
+        final_strict=s.get("final_strict_success"), injection_triggered=s.get("injection_triggered") if fault else None,
         attack_success=s.get("attack_success"),
         harm_in_final_state=attack["attempts"][-1]["in_final_state"] if attack.get("attempts") else None,
         unauthorized_executions=s.get("unauthorized_executions"),
@@ -233,11 +234,11 @@ def markdown(rows, conditions, pairs, judged):
              f"{len(rows)} trials, {sum(bool(r['error']) or r['trace_complete'] is not True for r in rows)} "
              "with errors or incomplete traces. Means are over repeats; empty cells are unknown or not applicable.", "",
              "## Outcome", "",
-             "| Faults | Site | Condition | Trials | Final strict | Attack success | Harm in final state | "
-             "Unauthorized executions | Fallbacks | Unresolved effects |", "|---|---|---|---|---|---|---|---|---|---|"]
+             "| Faults | Site | Condition | Trials | Fault triggered | Final strict | Attack success | Harm in final state | "
+             "Unauthorized executions | Fallbacks | Unresolved effects |", "|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in conditions:
         lines.append(f"| {r['family'] or 'none'} | {r['site'] or '–'} | {_label(r)} | {r['trials']} | "
-                     f"{_frac(r, 'strict')} | {_frac(r, 'attack')} | {_frac(r, 'harm_in_final_state')} | "
+                     f"{_frac(r, 'triggered')} | {_frac(r, 'strict')} | {_frac(r, 'attack')} | {_frac(r, 'harm_in_final_state')} | "
                      f"{_n(r['unauthorized_executions_mean'])} | {r['fallbacks']} | {r['runs_with_unresolved_effects']} |")
     recovery = [r for r in conditions if r["condition"] in ("selective", "full_restart")]
     lines += ["", "## Recovery cost", "",
