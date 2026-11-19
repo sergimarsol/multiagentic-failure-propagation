@@ -158,10 +158,17 @@ class DagWorkflow:
         self.points.capture(attempt, f"C{self.state['position']}",
                             injection_phase="after_injection" if self.faulty_ids else "no_injection")
 
-    def run(self, attempt):
+    def run(self, attempt, *, stop_after_fault=False):
+        """Run pending nodes; with stop_after_fault, halt once a faulty result is handed off.
+
+        Returns False only when it halted early, so downstream nodes stay pending.
+        """
         for node in self.nodes:
             if node.name in self.state["pending_nodes"]:
                 self.run_node(node, attempt)
+                if stop_after_fault and self.faulty_ids and self.state["pending_nodes"]:
+                    return False
+        return True
 
 
 class InvalidationGraph:
@@ -389,7 +396,8 @@ class SelectiveRecoveryCoordinator:
                     return
         raise TraceError(f"eligible checkpoint attempts exhausted: {last_error}") from last_error
 
-    def recover(self, notice, attempt, *, requested_strategy="selective"):
+    def recover(self, notice, attempt, *, requested_strategy="selective",
+                notification_boundary="after_initial_workflow"):
         if requested_strategy not in {"selective", "full_restart"}:
             raise ValueError("unsupported recovery strategy")
         w, rec = self.workflow, self.workflow.recorder
@@ -402,7 +410,7 @@ class SelectiveRecoveryCoordinator:
         segment = new_id("segment")
         rec.log("recovery_started", attempt, recovery_id=rid,
             data={"requested_strategy": requested_strategy, "faulty_artifact_ids": list(notice.faulty_artifact_ids),
-                  "source": notice.source, "notification_boundary": "after_initial_workflow",
+                  "source": notice.source, "notification_boundary": notification_boundary,
                   "recovery_segment_id": segment, "recovery_policy": policy_settings})
         result = {"recovery_policy": policy_settings, "requested_strategy": requested_strategy, "executed_strategy": None,
                   "fallback_reason": None, "completed": False, "task_success": None,

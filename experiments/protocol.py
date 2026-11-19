@@ -10,6 +10,9 @@ from .models import detached, fingerprint
 
 PROTOCOL_VERSION = "1.1"
 CONDITIONS = {"clean", "fault", "full_restart", "always_verify", "clean_verify", "selective"}
+# after_faulty_handoff: the oracle notice arrives as soon as the faulty result is
+# handed off, so downstream stages have not run yet (Phase 2 recovery engine only).
+NOTIFICATION_BOUNDARIES = {"after_initial_workflow", "after_faulty_handoff"}
 
 
 class BudgetExceeded(RuntimeError):
@@ -97,8 +100,11 @@ def validate_config(config):
     if not isinstance(config["workflow"], dict):
         raise ValueError("workflow must be a versioned configuration object")
     Limits(**config["limits"])
-    if config.get("notification_boundary", "after_initial_workflow") != "after_initial_workflow":
-        raise ValueError("only after_initial_workflow notification is implemented")
+    boundary = config.get("notification_boundary", "after_initial_workflow")
+    if boundary not in NOTIFICATION_BOUNDARIES:
+        raise ValueError("unsupported notification_boundary")
+    if boundary != "after_initial_workflow" and config["condition"] not in {"selective", "full_restart"}:
+        raise ValueError("an early notice applies to selective and full_restart only")
     if config.get("fallback_policy", "full_restart") not in {"full_restart", "error"}:
         raise ValueError("unsupported fallback policy")
     if config["condition"] not in {"clean", "clean_verify"}:
