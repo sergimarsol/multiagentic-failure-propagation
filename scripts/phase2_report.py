@@ -74,13 +74,24 @@ def load_judgments(directory):
     return found
 
 
+def _notice(config):
+    """Notice timing for recovery runs: late (end of initial workflow) or early (after the faulty handoff)."""
+    if config["condition"] not in ("selective", "full_restart"):
+        return ""
+    return "early" if config.get("notification_boundary") == "after_faulty_handoff" else "late"
+
+
+def _label(row):
+    return row["condition"] + (" (early notice)" if row.get("notice") == "early" else "")
+
+
 def trial_row(trial, judgments):
     result = json.loads((trial / "result_0000.json").read_text())
     config, run = result["config"], trial / "run_0000"
     fault = config.get("fault") or {}
     row = {"trial": trial.name, "task": config["task_id"], "scenario": config["scenario_id"],
            "family": fault.get("family", ""), "site": fault.get("site", ""), "condition": config["condition"],
-           "repeat": config["repeat_index"], "error": result.get("error") or "",
+           "notice": _notice(config), "repeat": config["repeat_index"], "error": result.get("error") or "",
            "controls": json.dumps({k: v for k, v in config.items() if k not in TREATMENTS}, sort_keys=True)}
     judged, judge_cost = None, None
     try:
@@ -153,8 +164,8 @@ def _group(rows, keys):
 
 def condition_rows(rows):
     out = []
-    for key, rs in _group(rows, ("family", "site", "condition")).items():
-        row = dict(zip(("family", "site", "condition"), key), trials=len(rs),
+    for key, rs in _group(rows, ("family", "site", "condition", "notice")).items():
+        row = dict(zip(("family", "site", "condition", "notice"), key), trials=len(rs),
                    errors=sum(bool(r["error"]) or r["trace_complete"] is not True for r in rs),
                    budget_exhausted=sum(r["budget_exhausted"] is True for r in rs),
                    fallbacks=sum(bool(r["fallback_reason"]) for r in rs),
@@ -170,17 +181,19 @@ def condition_rows(rows):
                         f"{column}_sd": stats["stddev"], f"{column}_min": stats["min"], f"{column}_max": stats["max"]})
         out.append(row)
     order = {c: i for i, c in enumerate(CONDITIONS)}
-    return sorted(out, key=lambda r: (r["family"], r["site"], order.get(r["condition"], 99)))
+    return sorted(out, key=lambda r: (r["family"], r["site"], order.get(r["condition"], 99), r["notice"] == "early"))
 
 
 def pair_rows(rows):
     """Selective minus full restart for identical controls; unmatched trials are listed, not paired."""
     out = []
     recovery = [r for r in rows if r["condition"] in ("selective", "full_restart") and r["recovery_attempted"]]
-    for (task, scenario, repeat), rs in sorted(_group(recovery, ("task", "scenario", "repeat")).items()):
+    for (task, scenario, repeat, notice), rs in sorted(
+            _group(recovery, ("task", "scenario", "repeat", "notice")).items()):
         by = _group(rs, ("condition",))
         selective, restart = by.get(("selective",), []), by.get(("full_restart",), [])
-        row = {"task": task, "scenario": scenario, "repeat": repeat, "family": rs[0]["family"], "site": rs[0]["site"]}
+        row = {"task": task, "scenario": scenario, "repeat": repeat, "notice": notice,
+               "family": rs[0]["family"], "site": rs[0]["site"]}
         if len(selective) != 1 or len(restart) != 1:
             out.append({**row, "status": "unpaired"})
             continue
@@ -223,7 +236,7 @@ def markdown(rows, conditions, pairs, judged):
              "| Faults | Site | Condition | Trials | Final strict | Attack success | Harm in final state | "
              "Unauthorized executions | Fallbacks | Unresolved effects |", "|---|---|---|---|---|---|---|---|---|---|"]
     for r in conditions:
-        lines.append(f"| {r['family'] or 'none'} | {r['site'] or '–'} | {r['condition']} | {r['trials']} | "
+        lines.append(f"| {r['family'] or 'none'} | {r['site'] or '–'} | {_label(r)} | {r['trials']} | "
                      f"{_frac(r, 'strict')} | {_frac(r, 'attack')} | {_frac(r, 'harm_in_final_state')} | "
                      f"{_n(r['unauthorized_executions_mean'])} | {r['fallbacks']} | {r['runs_with_unresolved_effects']} |")
     recovery = [r for r in conditions if r["condition"] in ("selective", "full_restart")]
@@ -231,7 +244,7 @@ def markdown(rows, conditions, pairs, judged):
               "| Faults | Site | Condition | Recomputed stages | Retained stages | Added model calls (sd) | "
               "Added tokens | Recovery latency s (sd) | Total latency s |", "|---|---|---|---|---|---|---|---|---|"]
     for r in recovery:
-        lines.append(f"| {r['family']} | {r['site']} | {r['condition']} | {_n(r['recomputed_stages_mean'])} | "
+        lines.append(f"| {r['family']} | {r['site']} | {_label(r)} | {_n(r['recomputed_stages_mean'])} | "
                      f"{_n(r['retained_stages_mean'])} | {_n(r['recovery_model_calls_mean'])} "
                      f"({_n(r['recovery_model_calls_sd'])}) | {_n(r['recovery_tokens_mean'], 0)} | "
                      f"{_n(r['recovery_latency_s_mean'], 2)} ({_n(r['recovery_latency_s_sd'], 2)}) | "
@@ -240,12 +253,12 @@ def markdown(rows, conditions, pairs, judged):
     lines += ["", "## Selective against full restart (matched pairs)", "",
               f"{len(matched)} matched pairs; {len(pairs) - len(matched)} unpaired or with differing controls "
               "(see `pairs.csv`). Differences are selective minus full restart.", "",
-              "| Faults | Site | Pairs | Both strict | Mean diff model calls | Mean diff tokens | "
-              "Mean diff recovery latency s | Selective cheaper (calls) |", "|---|---|---|---|---|---|---|---|"]
-    for (family, site), ps in sorted(_group(matched, ("family", "site")).items()):
+              "| Faults | Site | Notice | Pairs | Both strict | Mean diff model calls | Mean diff tokens | "
+              "Mean diff recovery latency s | Selective cheaper (calls) |", "|---|---|---|---|---|---|---|---|---|"]
+    for (family, site, notice), ps in sorted(_group(matched, ("family", "site", "notice")).items()):
         mean = lambda column: describe([p[column] for p in ps])["mean"]
         calls = [p["diff_recovery_model_calls"] for p in ps if p["diff_recovery_model_calls"] is not None]
-        lines.append(f"| {family} | {site} | {len(ps)} | "
+        lines.append(f"| {family} | {site} | {notice} | {len(ps)} | "
                      f"{sum(p['selective_strict'] is True and p['restart_strict'] is True for p in ps)} | "
                      f"{_n(mean('diff_recovery_model_calls'))} | {_n(mean('diff_recovery_tokens'), 0)} | "
                      f"{_n(mean('diff_recovery_latency_s'), 2)} | {sum(c < 0 for c in calls)}/{len(calls)} |")
@@ -259,16 +272,17 @@ def markdown(rows, conditions, pairs, judged):
     for r in recovery:
         cells = [_n(r[f"{k}_calls_mean"]) for k in ("retained_valid", "retained_invalid", "retained_unknown",
                                                     "redone", "repeated_valid")]
-        lines.append(f"| {r['family']} | {r['site']} | {r['condition']} | " + " | ".join(cells) + " |")
+        lines.append(f"| {r['family']} | {r['site']} | {_label(r)} | " + " | ".join(cells) + " |")
     lines += ["", "## Tracking overhead (mean per run)", "",
               "| Condition | Trials | Checkpoint capture ms | Checkpoint restore ms | Planning + reuse checks ms | "
               "Recording ms | Checkpoint bytes | Overhead share of latency | Initial attempt latency s |",
               "|---|---|---|---|---|---|---|---|---|"]
-    for (condition,), rs in sorted(_group(rows, ("condition",)).items(), key=lambda kv: CONDITIONS.index(kv[0][0])):
+    for (condition, notice), rs in sorted(_group(rows, ("condition", "notice")).items(),
+                                          key=lambda kv: (CONDITIONS.index(kv[0][0]), kv[0][1] == "early")):
         mean = lambda column: describe([r[column] for r in rs])["mean"]
         plan = [r["recovery_planning_ms"] + r["reuse_check_ms"] for r in rs
                 if r["recovery_planning_ms"] is not None and r["reuse_check_ms"] is not None]
-        lines.append(f"| {condition} | {len(rs)} | {_n(mean('checkpoint_capture_ms'), 2)} | "
+        lines.append(f"| {_label({'condition': condition, 'notice': notice})} | {len(rs)} | {_n(mean('checkpoint_capture_ms'), 2)} | "
                      f"{_n(mean('checkpoint_restore_ms'), 2)} | {_n(describe(plan)['mean'], 2)} | "
                      f"{_n(mean('recording_ms'), 2)} | {_n(mean('checkpoint_bytes'), 0)} | "
                      f"{_n(mean('tracking_overhead_share'), 4)} | {_n(mean('initial_latency_s'), 2)} |")

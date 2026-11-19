@@ -51,6 +51,9 @@ def prepare_config(config):
         c.setdefault("recovery_policy", {})
     if "recovery_policy" in c and c["condition"] not in PHASE2_CONDITIONS:
         raise ValueError("recovery_policy applies to selective and full_restart only")
+    if c.get("notification_boundary", "after_initial_workflow") != "after_initial_workflow" \
+            and not uses_recovery_engine(c):
+        raise ValueError("an early notice needs the recovery engine (selective, or full_restart with recovery_policy)")
     if c.get("task_id") not in {"user_task_0", "user_task_2"}:
         raise ValueError("B bridge supports selected Banking tasks 0 and 2")
     allowed = {"task_id", "condition", "scenario_id", "comparison_group_id", "repeat_index",

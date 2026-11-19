@@ -144,16 +144,24 @@ def _history(rec, task_id, paths, environments, final_attempt, result):
 
 def run_banking_phase2(directory, *, task_id, condition, client, session_config=None, injector=None,
                        injection_spec=None, synthetic=False, experiment_config=None, limits=None,
-                       recovery_policy=None):
-    """One trial: initial workflow, oracle notice at its end, then the requested recovery.
+                       recovery_policy=None, notification_boundary="after_initial_workflow"):
+    """One trial: initial workflow, oracle notice, then the requested recovery.
 
-    condition "selective" restores the newest uncontaminated checkpoint and reruns the
-    affected stages; "full_restart" is the matched baseline on the same adapter, using a
-    fresh environment and fresh stages. An untriggered fault starts no recovery.
+    The notice arrives at the end of the initial workflow (default), or with
+    "after_faulty_handoff" as soon as the faulty result is handed off, before any
+    downstream stage runs. condition "selective" restores the newest uncontaminated
+    checkpoint and reruns the affected stages; "full_restart" is the matched baseline on
+    the same adapter, using a fresh environment and fresh stages. An untriggered fault
+    starts no recovery.
     """
     if condition not in {"selective", "full_restart"}:
         raise ValueError("Phase 2 runner supports selective and full_restart")
     policy = normalize_recovery_policy(recovery_policy or {})
+    if experiment_config is not None:
+        notification_boundary = experiment_config.get("notification_boundary", "after_initial_workflow")
+    if notification_boundary not in {"after_initial_workflow", "after_faulty_handoff"}:
+        raise ValueError("unsupported notification_boundary")
+    early = notification_boundary == "after_faulty_handoff"
     if experiment_config is not None:
         experiment_config = validate_config(experiment_config)
         if (experiment_config["task_id"], experiment_config["condition"],
@@ -166,7 +174,7 @@ def run_banking_phase2(directory, *, task_id, condition, client, session_config=
     rec = Recorder(directory, {"run_id": new_id("run"), "task_id": task_id, "condition": condition,
         "synthetic": synthetic, "runner": RUNNER_VERSION, "recovery_policy": policy,
         "limits": asdict(limits), "history_policy": "effective_path_union",
-        "notification_boundary": "after_initial_workflow", **provenance(experiment_config)})
+        "notification_boundary": notification_boundary, **provenance(experiment_config)})
     rec.budget = Budget(limits)
     started = tick = perf_counter()
     attempt = "attempt_0"
@@ -189,12 +197,13 @@ def run_banking_phase2(directory, *, task_id, condition, client, session_config=
         "site": injection_spec.site if injection_spec else None,
         "enabled": True, "injector_present": injector is not None})
     workflow.points.capture(attempt, "C0", injection_phase="before_injection")
-    completed = False
+    completed, stopped_for_notice = False, False
     try:
         rec.budget.check()
-        workflow.run(attempt)
+        # An early notice halts the pass at the faulty handoff; recovery runs the rest.
+        stopped_for_notice = not workflow.run(attempt, stop_after_fault=early)
         rec.budget.check()
-        completed = True
+        completed = not stopped_for_notice
     except Exception as exc:
         rec.log("workflow_failed", attempt, data={"error": repr(exc)})
     if workflow.gate is not None:
@@ -212,7 +221,9 @@ def run_banking_phase2(directory, *, task_id, condition, client, session_config=
     evaluation, first = score("initial", workflow, attempt)
     rec.save_evaluation(evaluation)
     paths, environments = [first], [env]
-    rec.log("attempt_finished", attempt, duration_ms=(perf_counter() - tick) * 1000, data={"completed": completed})
+    rec.log("attempt_finished", attempt, duration_ms=(perf_counter() - tick) * 1000,
+            data={"completed": completed, "stopped_for_notice": stopped_for_notice,
+                  "pending_nodes": list(workflow.state["pending_nodes"])})
 
     result, final_attempt = {}, attempt
     if workflow.faulty_ids:
@@ -221,7 +232,8 @@ def run_banking_phase2(directory, *, task_id, condition, client, session_config=
             workflow, lambda r: make_banking_workflow(r, task_id, client, session_config),
             evaluate_effective, **policy)
         result = coordinator.recover(FaultNotice(tuple(workflow.faulty_ids)), attempt,
-                                     requested_strategy=condition)
+                                     requested_strategy=condition,
+                                     notification_boundary=notification_boundary)
         final, final_attempt = coordinator.workflow, result["attempt_id"]
         if final is not workflow:
             environments.append(final.environment.env)

@@ -45,8 +45,15 @@ in A's attack judgment. Only selective removes it from the final simulated state
 - **Saved at each completed-stage boundary (C0-C3).** Bank state, the effective audit path,
   and per stage: role, message history, model/tool call counts, delivered output.
 - **Fault.** C's injector runs behind B's `InjectionGate` at the configured handoff. The
-  recovery notice is the replaced artifact's ID, given after the initial workflow ends.
-  Injection is disabled for every rerun and for the fallback restart.
+  recovery notice is the replaced artifact's ID. Injection is disabled for every rerun
+  and for the fallback restart.
+- **Notice timing.** `notification_boundary` is `after_initial_workflow` (default, methods
+  `selective_dag` / `full_restart_dag`): the wrong action has already run, so recovery
+  can only save cost. `after_faulty_handoff` (methods `*_dag_early`): the pass stops as
+  soon as the faulty result is handed off, before any downstream stage, so recovery can
+  also prevent the wrong action. For a faulty plan, selective reruns only the planner
+  (keeping research) and then runs the executor; full restart reruns research too. Early
+  notice is accepted only on the recovery engine; the report pairs runs by notice timing.
 - **Scores.** A's scorer judges (1) the initial path, (2) the effective path after recovery.
   The history evaluation is the union of both; calls on neither path are listed as
   `unscored_abandoned_call_ids`. `environment_finalized` carries the full audit, so A's
@@ -119,9 +126,9 @@ reports judge cost separately from agent cost. Definitions are in the header of
 
 ### C (Yenan): faults and propagation
 
-1. Notification is only at the end of the initial workflow, so the faulty action has
-   already executed in every recovery condition. If you want an earlier boundary (right
-   after the faulty handoff), say so: it changes the protocol and the harm results.
+1. Both notice timings are in the sweep (agreed with D): late, where the faulty action has
+   already run, and early, right after the faulty handoff. Check that early selective on
+   task 2 reruns only the planner and prevents the wrong rent update.
 2. Phase 2 traces contain `fault_injected`, `injection_config` and
    `injection_attempt_finished`, but not B's `injection_observation`. Say if you need it.
 3. Extend the propagation analysis using `execution_segment_id` and the history

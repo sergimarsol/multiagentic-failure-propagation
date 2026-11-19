@@ -50,7 +50,8 @@ def _csv(path, rows):
 def _clean_pair_key(config):
     # Only deliberate treatments differ from the common clean counterpart.
     # Unknown future configuration fields are controls by default.
-    treatments = {"condition", "scenario_id", "fault", "method_id", "recovery_policy"}
+    treatments = {"condition", "scenario_id", "fault", "method_id", "recovery_policy",
+                  "notification_boundary"}
     return fingerprint({k: v for k, v in config.items() if k not in treatments})
 
 

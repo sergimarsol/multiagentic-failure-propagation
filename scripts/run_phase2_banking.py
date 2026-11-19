@@ -1,9 +1,11 @@
 """Phase 2 Banking runs: selective recovery against matched baselines, repeated.
 
 Per repeat and task: clean, clean_verify, and for each of C's scenarios fault,
-always_verify, full_restart and selective. full_restart and selective both use the
-recovery engine (same stages, checkpoints, oracle notice at the end of the initial
-workflow and trial budget), so they differ only in the recovery strategy.
+always_verify, full_restart and selective, each recovery condition twice: with the
+oracle notice at the end of the initial workflow (method <condition>_dag) and right
+after the faulty handoff, before downstream stages run (<condition>_dag_early).
+full_restart and selective both use the recovery engine (same stages, checkpoints,
+notice and trial budget), so within a notice timing they differ only in strategy.
 
   uv run python scripts/run_phase2_banking.py --scripted --smoke --output runs/p2-check
   uv run python scripts/run_phase2_banking.py --profile configs/phase1_final.json --smoke --output runs/p2-smoke
@@ -21,6 +23,8 @@ from experiments.protocol import normalize_recovery_policy
 from scripts import run_phase1_final as base
 
 RECOVERY = ("full_restart", "selective")
+# Late notice (end of the initial workflow) and early notice (right after the faulty handoff).
+BOUNDARIES = (("after_initial_workflow", ""), ("after_faulty_handoff", "_early"))
 SMOKE_SCENARIO = "t0_pe_accidental_amount"
 
 
@@ -31,9 +35,12 @@ def plan(model, runtime, repeats, synthetic):
         if config["condition"] != "full_restart":
             configs.append(config)
             continue
-        for condition in RECOVERY:
-            configs.append({**config, "condition": condition, "method_id": condition + "_dag",
-                            "recovery_policy": dict(policy)})
+        for boundary, suffix in BOUNDARIES:
+            for condition in RECOVERY:
+                extra = {"notification_boundary": boundary} if suffix else {}
+                configs.append({**config, **extra, "condition": condition,
+                                "method_id": condition + "_dag" + suffix,
+                                "recovery_policy": dict(policy)})
     return configs
 
 

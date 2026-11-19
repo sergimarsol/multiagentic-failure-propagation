@@ -60,7 +60,9 @@ def plan(model, runtime, repeats, synthetic):
 
 
 def key(config):
-    return f"r{config['repeat_index']}-{config['task_id']}-{config['scenario_id']}-{config['condition']}"
+    # method_id (Phase 2 only) separates methods that share a condition, e.g. late vs early notice.
+    method = config.get("method_id", config["condition"])
+    return f"r{config['repeat_index']}-{config['task_id']}-{config['scenario_id']}-{method}"
 
 
 def git(*args):

@@ -218,3 +218,51 @@ def test_recovery_policy_is_rejected_for_other_conditions(tmp_path):
     with pytest.raises(ValueError, match="recovery_policy"):
         execute_workflow(config("fault", scenario=LATE["user_task_0"], recovery_policy={}),
                          tmp_path, client_factory=factory)
+
+
+@pytest.mark.parametrize("task", ["user_task_0", "user_task_2"])
+def test_early_notice_reruns_planner_keeps_research_and_prevents_the_wrong_action(tmp_path, task):
+    early = dict(notification_boundary="after_faulty_handoff")
+    s = execute_workflow(config("selective", task, LATE[task], **early), tmp_path, client_factory=factory)
+    # The pass halts at the faulty plan handoff: the executor never sees it.
+    assert [e["node_id"] for e in events(tmp_path, "node_started")] == ["research", "plan", "plan", "execute"]
+    assert not events(tmp_path, "fault_exposure")
+    assert events(tmp_path, "attempt_finished")[0]["data"]["stopped_for_notice"] is True
+    assert events(tmp_path, "recovery_started")[0]["data"]["notification_boundary"] == "after_faulty_handoff"
+    assert s["executed_strategy"] == "selective" and s["final_strict_success"] is True
+    # Only the planner is redone; the executor runs for the first time during recovery.
+    assert s["effective_retained_artifacts"] == 1 and s["recomputed_nodes"] == 1
+    h = history(tmp_path)
+    assert h["unauthorized_execution_ids"] == [] and s["unauthorized_executions"] == 0
+    assert s["trace_complete"] and not s["execution_errors"]
+
+
+def test_early_notice_full_restart_also_prevents_harm_but_reruns_research(tmp_path):
+    early = dict(notification_boundary="after_faulty_handoff", recovery_policy={})
+    scenario = LATE["user_task_2"]
+    selective = execute_workflow(config("selective", "user_task_2", scenario, **early),
+                                 tmp_path / "s", client_factory=factory)
+    restart = execute_workflow(config("full_restart", "user_task_2", scenario, **early),
+                               tmp_path / "f", client_factory=factory)
+    assert [e["node_id"] for e in events(tmp_path / "f", "node_started")] == [
+        "research", "plan", "research", "plan", "execute"]
+    for s in (selective, restart):
+        assert s["final_strict_success"] is True and s["unauthorized_executions"] == 0
+    assert selective["recovery_added_cost"]["model_calls"] < restart["recovery_added_cost"]["model_calls"]
+
+
+def test_early_notice_requires_the_recovery_engine(tmp_path):
+    for c in (config("fault", scenario=LATE["user_task_0"], notification_boundary="after_faulty_handoff"),
+              config("full_restart", scenario=LATE["user_task_0"], notification_boundary="after_faulty_handoff"),
+              config("selective", scenario=LATE["user_task_0"], notification_boundary="sometime")):
+        with pytest.raises(ValueError):
+            execute_workflow(c, tmp_path, client_factory=factory)
+
+
+def test_phase2_plan_has_late_and_early_recovery_methods():
+    from scripts.run_phase2_banking import plan
+    configs = plan({"model": "m", "base_url": "http://127.0.0.1:1/v1"}, "rt", 1, True)
+    methods = {c.get("method_id") for c in configs if c["condition"] in ("selective", "full_restart")}
+    assert methods == {"selective_dag", "full_restart_dag", "selective_dag_early", "full_restart_dag_early"}
+    assert all(c.get("notification_boundary") == "after_faulty_handoff"
+               for c in configs if str(c.get("method_id", "")).endswith("_early"))
