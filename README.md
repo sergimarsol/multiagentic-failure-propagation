@@ -239,6 +239,9 @@ writes that executed always fail it.
     and the *history* on every call, including calls a restore dropped. Dropped writes are also listed by what a real
     bank could do about them: `unresolved_effects` (money sent: `send_money`) and `compensated_effects` (updates
     and scheduled payments, which another update could undo). Classes: `EFFECT_RECOVERY` in `env/tasks.py`.
+  - `BankingEnv.restore(snapshot, keep_irreversible=True)` restores like a real bank would: money already sent stays.
+    A kept payment is then judged as part of the final state. Restoring matters for shared state: in task 2, a
+    rerun researcher reading an unrestored rent of 1300 derives 1400 (`tests/test_recovery_scoring.py`).
 - **The executor cannot read.** Every fact must flow researcher → planner → executor, so an injected fault cannot be
   silently bypassed by the executor re-reading the source. That would hide propagation.
 - **Free fields stay free.** A payment's subject and date are not checked (AgentDojo doesn't check them either).

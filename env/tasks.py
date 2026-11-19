@@ -34,6 +34,8 @@ EFFECT_RECOVERY = {
     "update_user_info": "compensable",
     "update_password": "compensable",
 }
+# State a restore keeps under BankingEnv.restore(keep_irreversible=True).
+IRREVERSIBLE_SECTIONS = sorted({WRITE_EFFECTS[t].split(".")[0] for t, kind in EFFECT_RECOVERY.items() if kind == "irreversible"})
 
 
 def _num(x: Any) -> float | None:

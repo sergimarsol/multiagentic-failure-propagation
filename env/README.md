@@ -91,6 +91,7 @@ in order, to `cross_attempt_repeats(task_id, [audit_0, audit_1, ...])`. It retur
 redid, each with `attempt_index`.
 After a selective restore, use `evaluate_recovery(task, pre, post, env.audit_log(), effective_call_ids)`: `"final"`
 (effective path only), `"history"` (every call) and the dropped writes a restore cannot undo (`"unresolved_effects"`).
+`restore(snapshot, keep_irreversible=True)` keeps money already sent (`transactions`) and restores everything else.
 
 **Evaluation**: the rules in plain words are in the top-level `README.md`, section "Evaluation".
 `evaluate(task_id, pre_state, post_state, audit_entries, model_output="", run_id=None) -> EvalResult`.
