@@ -57,6 +57,14 @@ in A's attack judgment. Only selective removes it from the final simulated state
   Early notice is a best case: the oracle names the faulty result for free, which a real
   system cannot do, while always_verify pays to catch it. Present early-notice rows as an
   upper bound, not as a fair win over always_verify (the report labels them so).
+- **Restore mode.** `restore_mode` is `simulated` (default): a restore undoes every effect
+  in the simulator, including money sent. `real_bank` (methods `*_dag_bank`, late notice
+  only) uses A's `restore(keep_irreversible=True)`: money already sent stays, and only what
+  a real bank could undo (rent, scheduled payments, user info) goes back. Selective keeps
+  the payment after its restore; full restart starts from the initial bank plus that
+  payment, so both methods face the same bank. The report's "Harm in final state" checks
+  every audited call against the last attempt's bank, so a carried payment counts. With
+  early notice the executor has not run, so there is nothing to keep.
 - **Scores.** A's scorer judges (1) the initial path, (2) the effective path after recovery.
   The history evaluation is A's `evaluate_recovery` over every audited call, including
   branches a restore dropped. Dropped writes are listed as `unresolved_effects` (money sent,

@@ -24,6 +24,7 @@ from .recovery import FaultNotice
 from .selective import DagWorkflow, Node, RetryableNodeError, SelectiveRecoveryCoordinator
 
 RUNNER_VERSION = "banking_phase2_v1"
+RESTORE_MODES = ("simulated", "real_bank")
 BANK_KEYS = ("balance", "iban", "transactions", "scheduled_transactions", "files", "user_account")
 AUDIT_PATH = "_d_audit_path"
 ROLES = {"research": "researcher", "plan": "planner", "execute": "executor"}
@@ -49,11 +50,18 @@ class _StageCallbacks:
         yield self._execution
 
 
-def make_banking_workflow(recorder, task_id, client, session_config=None, *, injector=None, injection_spec=None):
+def make_banking_workflow(recorder, task_id, client, session_config=None, *, injector=None, injection_spec=None,
+                          restore_mode="simulated", carry_from=None):
     """Fresh environment, fresh audit and fresh stage contexts for one attempt."""
     session_config = session_config or WorkflowConfig()
     env = BankingEnv().load(task_id)
-    bank = BankingAdapter(env, recorder, segmented_audit=True, segment_on_restore=False)
+    if carry_from is not None and restore_mode == "real_bank":
+        # A real bank cannot start over: a full restart begins from the initial state plus the
+        # money the abandoned attempt already sent.
+        from env.state import env_from_state
+        env.restore(env_from_state(carry_from.expected_restore(env.state_dict())))
+    bank = BankingAdapter(env, recorder, segmented_audit=True, segment_on_restore=False,
+                          keep_irreversible=restore_mode == "real_bank")
     holder = {}
 
     def execute(node, inputs, environment, context, callbacks, execution):
@@ -87,7 +95,8 @@ def make_banking_workflow(recorder, task_id, client, session_config=None, *, inj
     workflow = DagWorkflow(recorder, bank, list(NODES), execute,
         config={"runner": RUNNER_VERSION, "task_id": task_id, "session": asdict(session_config),
                 "model": client.config.public_dict(), "prompts": fingerprint(PROMPTS),
-                "research_format": RESEARCH_FORMATS.get(task_id, ""), "plan_schema": fingerprint(PLAN_SCHEMA)},
+                "research_format": RESEARCH_FORMATS.get(task_id, ""), "plan_schema": fingerprint(PLAN_SCHEMA),
+                "restore_mode": restore_mode},
         injector=gate, fault_node=injection_spec.site if gate and injection_spec else None)
     workflow.gate = gate
     holder["workflow"] = workflow
@@ -155,7 +164,8 @@ def _history(rec, task_id, paths, environments, final_attempt, result):
 
 def run_banking_phase2(directory, *, task_id, condition, client, session_config=None, injector=None,
                        injection_spec=None, synthetic=False, experiment_config=None, limits=None,
-                       recovery_policy=None, notification_boundary="after_initial_workflow"):
+                       recovery_policy=None, notification_boundary="after_initial_workflow",
+                       restore_mode="simulated"):
     """One trial: initial workflow, oracle notice, then the requested recovery.
 
     The notice arrives at the end of the initial workflow (default), or with
@@ -170,9 +180,14 @@ def run_banking_phase2(directory, *, task_id, condition, client, session_config=
     policy = normalize_recovery_policy(recovery_policy or {})
     if experiment_config is not None:
         notification_boundary = experiment_config.get("notification_boundary", "after_initial_workflow")
+        restore_mode = experiment_config.get("restore_mode", "simulated")
     if notification_boundary not in {"after_initial_workflow", "after_faulty_handoff"}:
         raise ValueError("unsupported notification_boundary")
     early = notification_boundary == "after_faulty_handoff"
+    # simulated: a restore undoes every effect in the simulator. real_bank: money already sent
+    # stays (A's restore(keep_irreversible=True)); only what a real bank could undo is restored.
+    if restore_mode not in RESTORE_MODES:
+        raise ValueError("unsupported restore_mode")
     if experiment_config is not None:
         experiment_config = validate_config(experiment_config)
         if (experiment_config["task_id"], experiment_config["condition"],
@@ -185,7 +200,8 @@ def run_banking_phase2(directory, *, task_id, condition, client, session_config=
     rec = Recorder(directory, {"run_id": new_id("run"), "task_id": task_id, "condition": condition,
         "synthetic": synthetic, "runner": RUNNER_VERSION, "recovery_policy": policy,
         "limits": asdict(limits), "history_policy": "all_audited_calls",
-        "notification_boundary": notification_boundary, **provenance(experiment_config)})
+        "notification_boundary": notification_boundary, "restore_mode": restore_mode,
+        **provenance(experiment_config)})
     rec.budget = Budget(limits)
     started = tick = perf_counter()
     attempt = "attempt_0"
@@ -193,7 +209,8 @@ def run_banking_phase2(directory, *, task_id, condition, client, session_config=
     rec.log("segment_started", attempt, data={"parent_segment_id": None})
     rec.log("attempt_started", attempt)
     workflow = make_banking_workflow(rec, task_id, client, session_config,
-                                     injector=injector, injection_spec=injection_spec)
+                                     injector=injector, injection_spec=injection_spec,
+                                     restore_mode=restore_mode)
     env = workflow.environment.env
     initial = detached(env.state_dict())
     rec.log("environment_initialized", attempt,
@@ -240,7 +257,9 @@ def run_banking_phase2(directory, *, task_id, condition, client, session_config=
     if workflow.faulty_ids:
         tick = perf_counter()
         coordinator = SelectiveRecoveryCoordinator(
-            workflow, lambda r: make_banking_workflow(r, task_id, client, session_config),
+            workflow, lambda r: make_banking_workflow(r, task_id, client, session_config,
+                                                      restore_mode=restore_mode,
+                                                      carry_from=workflow.environment),
             evaluate_effective, **policy)
         result = coordinator.recover(FaultNotice(tuple(workflow.faulty_ids)), attempt,
                                      requested_strategy=condition,

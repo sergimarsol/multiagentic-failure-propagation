@@ -105,6 +105,8 @@ def validate_config(config):
         raise ValueError("unsupported notification_boundary")
     if boundary != "after_initial_workflow" and config["condition"] not in {"selective", "full_restart"}:
         raise ValueError("an early notice applies to selective and full_restart only")
+    if config.get("restore_mode", "simulated") not in {"simulated", "real_bank"}:
+        raise ValueError("unsupported restore_mode")
     if config.get("fallback_policy", "full_restart") not in {"full_restart", "error"}:
         raise ValueError("unsupported fallback policy")
     if config["condition"] not in {"clean", "clean_verify"}:

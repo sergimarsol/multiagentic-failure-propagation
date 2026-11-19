@@ -6,6 +6,10 @@ oracle notice at the end of the initial workflow (method <condition>_dag) and ri
 after the faulty handoff, before downstream stages run (<condition>_dag_early).
 full_restart and selective both use the recovery engine (same stages, checkpoints,
 notice and trial budget), so within a notice timing they differ only in strategy.
+Late notice also runs both methods with a real-bank restore (<condition>_dag_bank):
+money already sent stays, as in a real bank, so selective keeps it after its restore
+and full restart starts from the initial bank plus that money. With early notice the
+executor has not run, so there is nothing to keep and no second restore mode.
 
   uv run python scripts/run_phase2_banking.py --scripted --smoke --output runs/p2-check
   uv run python scripts/run_phase2_banking.py --profile configs/phase1_final.json --smoke --output runs/p2-smoke
@@ -41,6 +45,9 @@ def plan(model, runtime, repeats, synthetic):
                 configs.append({**config, **extra, "condition": condition,
                                 "method_id": condition + "_dag" + suffix,
                                 "recovery_policy": dict(policy)})
+        for condition in RECOVERY:
+            configs.append({**config, "condition": condition, "method_id": condition + "_dag_bank",
+                            "recovery_policy": dict(policy), "restore_mode": "real_bank"})
     return configs
 
 
