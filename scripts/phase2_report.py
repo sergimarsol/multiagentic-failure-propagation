@@ -131,6 +131,15 @@ def trial_row(trial, judgments):
         model_calls=total.get("model_calls"), tool_calls=total.get("tool_calls"), tokens=_tokens(total),
         latency_s=_seconds(s.get("total_latency_ms")),
         initial_latency_s=_seconds(attempts[0]["latency_ms"]) if attempts else None)
+    # A replayed initial pass took no model time in this trial; add back the recorded time so
+    # totals stay comparable with the trial that ran it. Recovery latency is unaffected.
+    shared = _initial_pass(run)
+    row["initial_pass"] = "" if shared is None else "replayed" if shared["replayed_calls"] and not shared[
+        "live_calls"] else "mixed" if shared["replayed_calls"] else "recorded"
+    if shared and shared["replayed_latency_ms"]:
+        for column in ("latency_s", "initial_latency_s"):
+            if row[column] is not None:
+                row[column] = round(row[column] + shared["replayed_latency_ms"] / 1000, 3)
     # Recovery measurements are not applicable (empty), not zero, when no recovery ran.
     row.update(
         recovery_model_calls=added.get("model_calls") if recovery else None,
@@ -241,6 +250,23 @@ def _frac(row, name):
     return f"{row[name + '_k']}/{row[name + '_n']}" if row[name + "_n"] else "–"
 
 
+def _initial_pass(run):
+    """The trial's initial_pass event (shared first pass), or None."""
+    try:
+        for line in (run / "events.jsonl").read_text().splitlines():
+            if '"initial_pass"' in line:
+                event = json.loads(line)
+                if event["event_type"] == "initial_pass":
+                    return event["data"]
+    except (OSError, ValueError, KeyError):
+        pass
+    return None
+
+
+SHARED_NOTE = ("Recovery methods of one scenario and repeat share one initial pass: {n} of {m} recovery trials "
+               "replayed the recorded model replies, so paired methods face the same fault. Their total latency "
+               "includes the recorded first-pass time.")
+
 # An oracle names the faulty result for free; no real system has that. always_verify pays to find it.
 EARLY_NOTE = ("**Early notice is a best case, not a fair comparison with always_verify.** The oracle names the "
               "faulty result right after the handoff at no cost, which a real system cannot do. always_verify "
@@ -262,6 +288,9 @@ def markdown(rows, conditions, pairs, judged):
                      f"{_n(r['unauthorized_executions_mean'])} | {r['fallbacks']} | {r['runs_with_unresolved_effects']} |")
     if any(r.get("notice") == "early" for r in conditions):
         lines += ["", EARLY_NOTE]
+    engine = [r for r in rows if r.get("initial_pass")]
+    if engine:
+        lines += ["", SHARED_NOTE.format(n=sum(r["initial_pass"] == "replayed" for r in engine), m=len(engine))]
     recovery = [r for r in conditions if r["condition"] in ("selective", "full_restart")]
     lines += ["", "## Recovery cost", "",
               "| Faults | Site | Condition | Recomputed stages | Retained stages | Added model calls (sd) | "
