@@ -54,11 +54,13 @@ def prepare_config(config):
     if c.get("notification_boundary", "after_initial_workflow") != "after_initial_workflow" \
             and not uses_recovery_engine(c):
         raise ValueError("an early notice needs the recovery engine (selective, or full_restart with recovery_policy)")
+    if "restore_mode" in c and not uses_recovery_engine(c):
+        raise ValueError("restore_mode needs the recovery engine (selective, or full_restart with recovery_policy)")
     if c.get("task_id") not in {"user_task_0", "user_task_2"}:
         raise ValueError("B bridge supports selected Banking tasks 0 and 2")
     allowed = {"task_id", "condition", "scenario_id", "comparison_group_id", "repeat_index",
                "workflow", "limits", "synthetic", "fault", "notification_boundary", "initial_state_hash",
-               "method_id", "recovery_policy"}
+               "method_id", "recovery_policy", "restore_mode"}
     if set(c) - allowed:
         raise ValueError("unsupported B bridge controls: " + str(sorted(set(c) - allowed)))
     w = c.get("workflow", {})
