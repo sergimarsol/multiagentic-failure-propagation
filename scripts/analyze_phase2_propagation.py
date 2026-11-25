@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 RULE_VERSION = "c-phase2-propagation-v0.3"
+SUPPORTED_RUNNERS = frozenset({"banking_phase2_v1", "banking_phase2_v2"})
 LABELS = {
     "not_applicable", "not_exposed", "exposed_not_adopted", "propagated_to_plan",
     "attempted_incorrect_action", "executed_incorrect_action", "uncertain",
@@ -389,12 +390,12 @@ def main(argv: list[str] | None = None) -> int:
     skipped = 0
     for root in roots:
         meta = json.loads((root / "manifest.json").read_text(encoding="utf-8-sig"))
-        if meta.get("runner") != "banking_phase2_v1":
+        if meta.get("runner") not in SUPPORTED_RUNNERS:
             skipped += 1
             continue  # Phase 1 runs belong to the existing analyzer.
         rows.append(analyze_run(root))
     if not rows:
-        parser.error("No Phase 2 banking traces (runner=banking_phase2_v1) found")
+        parser.error("No supported Phase 2 banking traces found (" + ", ".join(sorted(SUPPORTED_RUNNERS)) + ")")
     out = args.output
     out.mkdir(parents=True, exist_ok=True)
     (out / "propagation_phase2.json").write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")

@@ -23,7 +23,7 @@ import sys
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from analyze_phase2_propagation import analyze_run
+from analyze_phase2_propagation import SUPPORTED_RUNNERS, analyze_run
 
 
 SCENARIOS = {
@@ -62,7 +62,7 @@ def real_run_dirs():
         if not (p.parent / "events.jsonl").exists():
             continue
         meta = json.loads(p.read_text(encoding="utf-8-sig"))
-        if meta.get("runner") == "banking_phase2_v1":
+        if meta.get("runner") in SUPPORTED_RUNNERS:
             phase2.append(p.parent)
         else:
             phase1.append(p.parent)
