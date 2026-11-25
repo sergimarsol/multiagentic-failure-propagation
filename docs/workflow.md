@@ -125,3 +125,44 @@ Successful and failed runs both retain evidence under the selected output direct
 All-query batches also save `results.json`, `results.csv`, and configuration/source hashes. **`runs/` is Git-ignored:** committing code does not publish experiment traces.
 
 Model pass rates and per-query outcomes are in [results.md](results.md). Run software checks with `.venv/bin/python -m pytest -q`.
+
+## Separating native errors from injection observations
+
+Use the offline report to compare a clean run with a fault run without changing
+the original traces or making model calls:
+
+```sh
+.venv/bin/python scripts/analyze_error_sources.py \
+  --clean runs/example-clean/run_0000 \
+  --injected runs/example-fault/run_0000 \
+  --output runs/example-error-observations
+```
+
+Both inputs must already contain B's `fault_cases.json` evidence export. The output
+directory must be new and separate from the inputs. JSON retains evidence IDs;
+CSV exposes the main observations:
+
+- `clean_task_error`: clean task failure with complete execution and no recorded
+  execution/call failures. Missing or failed execution produces unknown, not a
+  model-only error label.
+- `pre_injection_known_fact_error`: whether the original research output in the
+  injected attempt already disagrees with A's known facts. This is distinct from
+  the clean run, which may have generated different outputs. Only present known
+  fields are checked; notes, omitted fields and planner semantics remain unjudged.
+- `injection_adopted` and `injected_task_error`: separate observations of fault
+  adoption and final task failure. Their coexistence alone does not establish
+  causality. Per-attempt scores and evidence remain in JSON even after recovery.
+- `error_cancellation_candidate`: flags known pre-existing fact errors followed
+  by adopted corruption and a successful scored state change for manual review.
+  It is not counted automatically as a defense success.
+
+The report checks recorded prompts, source identity, initial state, experiment
+controls and verification policy. Compare `always_verify` with `clean_verify`, not
+plain `clean`. Missing controls remain unknown. Even matching configurations are
+independent observations, not proof of a shared-prefix causal comparison.
+
+Reference values come from A's offline task specification (default
+`tasks/banking_tasks.yaml`, overridable with `--task-spec`); its hash is recorded.
+Use the specification version corresponding to the traces. These values never
+enter model prompts. This report supplements C's provisional propagation analysis
+and does not change A's scores or C's labels.
