@@ -16,7 +16,7 @@ nodes of D's recovery engine, on A's simulator and scorer, with C's injector.
 | `selective` | Phase 2 | restore newest uncontaminated checkpoint, rerun affected stages |
 
 ```sh
-# Pipeline check with B's scripted client (no model): 6 trials, or all 44 with --repeats 1.
+# Pipeline check with B's scripted client (no model): 10 trials, or all 84 with --repeats 1.
 uv run python scripts/run_phase2_banking.py --scripted --smoke --output runs/p2-check
 
 # Real model (commit first; key only in the shell).
@@ -40,10 +40,13 @@ in A's attack judgment. Only selective removes it from the final simulated state
 
 ## How it is wired
 
-- **Stages.** One fresh B session per stage execution; D calls B's existing stage routine
-  with the delivered upstream artifact. Prompts, permissions, formats and retries are B's.
+- **Stages.** One fresh B session per stage execution; D calls B's public `run_stage`
+  with delivered upstream artifact IDs and the restored prefix's `StageState`.
+  Prompts, permissions, formats and retries are B's. See [the stage API](STAGE_API.md).
 - **Saved at each completed-stage boundary (C0-C3).** Bank state, the effective audit path,
-  and per stage: role, message history, model/tool call counts, delivered output.
+  and per stage: role, message history, model/tool call counts, original evidence IDs,
+  versioned continuation state, and separate produced/delivered output IDs. D's handoff
+  artifact depends on B's actual stage output, including its model/tool ancestry.
 - **Fault.** C's injector runs behind B's `InjectionGate` at the configured handoff. The
   recovery notice is the replaced artifact's ID. Injection is disabled for every rerun
   and for the fallback restart.
@@ -107,7 +110,8 @@ reports judge cost separately from agent cost. Definitions are in the header of
 - Work validity is unknown for most stages unless the LLM judge is run; rules only establish
   unauthorized executions and wrong research facts. Judged values need a spot check.
 - The report has no LaTeX tables yet.
-- No real-model Phase 2 run has been made yet.
+- Earlier real-model Phase 2 smoke traces are in `results/smoke/2026-11-18-triton-phase2/`;
+  new stage-adapter changes require their own smoke validation.
 
 ## Requests to each owner
 
@@ -127,16 +131,16 @@ reports judge cost separately from agent cost. Definitions are in the header of
 
 ### B (Zhenghao): stages
 
-1. D currently calls the private `BankingWorkflowSession._stage` and sets `env`, `bank`,
-   `cb`, `model_calls`, `tool_calls` by hand (`execute` in `experiments/banking_selective.py`).
-   Please expose a public stage entry point with the same behaviour; D will switch to it.
-2. Check the saved stage context (role, messages, call counts, delivered output). Name any
-   other state a resumed stage needs.
-3. Decide with D whether verification and regeneration should become recovery nodes. That
-   needs the verifier's evidence list saved at the boundary.
-4. Confirm that a retryable `ModelRequestError` (429, 5xx, timeout) is safe to retry from a
-   checkpoint.
-5. Run the real-model smoke command above and report failures.
+1. Implemented locally: `BankingWorkflowSession.run_stage`, `StageState`, and `StageResult`;
+   the Banking adapter uses the public API without setting B's internal fields.
+2. Original evidence IDs, compatible configuration identity and cumulative path counters
+   are saved at completed boundaries. Full histories remain audit data; reruns start fresh.
+3. Review [the verification/regeneration proposal](STAGE_API.md#verification-and-regeneration)
+   with D. Public primitives are tested; the recovery graph still has three business stages.
+4. Retryable model failures may follow completed tools. D must restore a safe checkpoint
+   before rerunning, while retaining recorded costs and irreversible effects. The integration
+   tests cover a failure after a successful write during recovery.
+5. Run the real-model smoke for the new adapter and report failures independently of older results.
 
 ### C (Yenan): faults and propagation
 

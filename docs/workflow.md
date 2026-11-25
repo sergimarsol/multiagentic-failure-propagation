@@ -107,7 +107,10 @@ Change `--condition` in the fault example to:
 - **`always_verify`:** checks each candidate against the user request and original tool evidence before downstream use. Rejection allows one producer regeneration; a second rejection stops the workflow. Omit the injector to test verification on clean inputs.
 - **`full_restart`:** D creates a fresh environment and session after controlled fault notification, without reinjection. Earlier violations remain in the historical audit.
 
-Verifier judgments do not replace task scoring. Full restart is simulated recovery, not reversal of an external payment. Automatic fault detection and selective recovery are not implemented.
+Verifier judgments do not replace task scoring. Full restart is simulated recovery, not reversal of an external payment.
+Phase 2 selective recovery is available through D's [Banking runner](PHASE2_INTEGRATION.md),
+using B's [public stage API and completed-boundary state](STAGE_API.md). The Phase 2 fault
+notice is supplied by the experiment; automatic fault detection is not implemented.
 
 ## Saved traces and results
 

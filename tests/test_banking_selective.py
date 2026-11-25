@@ -311,3 +311,63 @@ def test_restore_mode_requires_the_recovery_engine(tmp_path):
               config("selective", scenario=LATE["user_task_0"], restore_mode="somewhere")):
         with pytest.raises(ValueError):
             execute_workflow(c, tmp_path, client_factory=factory)
+
+
+def test_checkpoint_preserves_stage_evidence_and_actual_output_lineage(tmp_path):
+    from experiments.recorder import Recorder
+    from experiments.selective import InvalidationGraph
+    from workflow import StageState
+
+    s = direct(tmp_path, LATE["user_task_0"])
+    rows = events(tmp_path, "node_result")
+    research, plan, execute, rerun_plan, rerun_execute = [e["data"] for e in rows]
+    evidence = research["context"]["resume_state"]["evidence_ids"]
+    assert evidence
+    for row in (plan, execute, rerun_plan, rerun_execute):
+        assert StageState.from_dict(row["context"]["resume_state"]).evidence_ids == tuple(evidence)
+    assert rerun_plan["context"]["resume_state"]["model_calls"] == 3
+    assert rerun_execute["context"]["resume_state"]["model_calls"] == 5
+    assert s["total_cost"]["model_calls"] == 8
+    assert s["budget"]["calls"]["model"] == 8  # restore never refills the trial budget
+    assert plan["context"]["produced_artifact_id"] != plan["context"]["delivered_artifact_id"]
+    assert rerun_plan["context"]["produced_artifact_id"] == rerun_plan["context"]["delivered_artifact_id"]
+    assert rerun_plan["context"]["input_artifact_ids"][1] == research["artifact_id"]
+    checkpoint = json.loads((tmp_path / "checkpoints" / s["checkpoint_id"] / "execution.json").read_text())
+    assert checkpoint["contexts"]["research"]["resume_state"] == research["context"]["resume_state"]
+
+    rec = Recorder(tmp_path, json.loads((tmp_path / "manifest.json").read_text()))
+    source = research["context"]["stage_artifact_id"]
+    assert source in rec.artifact(research["artifact_id"])["input_artifact_ids"]
+    # Invalidating the inner B result reaches D's wrapper and downstream nodes.
+    invalid = InvalidationGraph(rec, rows[0]["attempt_id"]).invalidate([source])
+    assert all(row["artifact_id"] in invalid for row in (research, plan, execute))
+    assert rec.artifact(source)["producer_execution_id"] == rows[0]["node_execution_id"]
+    assert len(research["context"]["messages"]) == len(rerun_plan["context"]["messages"]) == 1
+
+
+def test_provider_failure_after_recovery_write_restores_bank_but_keeps_cost(tmp_path):
+    class FailAfterRecoveryWrite(FakeModel):
+        failed = False
+
+        def complete(self, messages, tools, *, json_output=False):
+            body = json.loads(messages[1]["content"])
+            if ("You are the Executor." in messages[0]["content"]
+                    and messages[-1]["role"] == "tool"
+                    and body["plan"]["actions"][0]["args"]["amount"] == 98.7 and not self.failed):
+                self.failed = True
+                raise ModelRequestError("temporary provider error after successful tool", retryable=True)
+            return super().complete(messages, tools, json_output=json_output)
+
+    s = direct(tmp_path, LATE["user_task_0"], client=FailAfterRecoveryWrite())
+    assert s["recovery_completed"] and s["final_strict_success"]
+    assert s["checkpoint_retry_count"] == 1 and s["checkpoint_attempts"] == 2
+    assert s["total_cost"]["model_calls"] == s["budget"]["calls"]["model"] == 11
+    assert len(events(tmp_path, "model_started")) == 11
+    assert len(events(tmp_path, "tool_started")) == 4  # one read and all three writes
+    final = events(tmp_path, "node_result")[-1]["data"]["context"]
+    assert final["resume_state"]["model_calls"] == 5  # only the restored effective path
+    assert len(final["messages"]) == 1
+    assert len(events(tmp_path, "node_failed_effects")) == 1
+    h = history(tmp_path)
+    wrong = h["details"]["paths"][0]["unauthorized_execution_ids"]
+    assert wrong and set(wrong) <= set(h["unauthorized_execution_ids"])
