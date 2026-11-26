@@ -20,6 +20,7 @@ method faces the same fault, or the same refusal before it.
 
 Options, resume behaviour and the summary layout are those of run_phase1_final.py.
 --smoke runs task 0 with one faulty-planner scenario, where recovery can keep the research.
+--split dev (default) or eval picks the scenarios (docs/phase2_workloads.md); one split per --output.
 --scripted uses B's test client: a pipeline check, not a model result.
 """
 import sys
@@ -35,10 +36,10 @@ BOUNDARIES = (("after_initial_workflow", ""), ("after_faulty_handoff", "_early")
 SMOKE_SCENARIO = "t0_pe_accidental_amount"
 
 
-def plan(model, runtime, repeats, synthetic):
+def plan(model, runtime, repeats, synthetic, split="dev"):
     policy = normalize_recovery_policy({})
     configs = []
-    for config in base.plan(model, runtime, repeats, synthetic):
+    for config in base.plan(model, runtime, repeats, synthetic, split):
         if config["condition"] != "full_restart":
             configs.append(config)
             continue

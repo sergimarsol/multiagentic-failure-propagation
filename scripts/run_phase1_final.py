@@ -11,6 +11,8 @@ trial is summarized together into <output>/summary/ (runs.csv, condition_summary
 The profile holds the team's locked model settings; any flag given explicitly overrides it.
 
 Use --smoke first (one scenario through all five conditions, repeat 0 only).
+--split dev (default) runs the development scenarios; --split eval runs the held-out ones, once,
+after the freeze. Use a separate --output per split; run_info.json records which.
 --scripted runs the same plan with B's test client, to check the pipeline only.
 """
 import argparse
@@ -36,11 +38,26 @@ PAYLOADS = "faults/payloads.yaml"
 PROFILE_KEYS = {"model", "base_url", "runtime", "plan_format", "temperature", "max_tokens", "request_timeout",
                 "repeats", "api_key_env"}
 LIMITS = {"model_calls": 60, "tool_calls": 40, "wall_seconds": 900, "tokens": None}
+# Development scenarios are the ones we build and tune on; evaluation scenarios are held out and
+# run once after the freeze (docs/phase2_workloads.md). A payload without a split tag is dev.
+SPLITS = ("dev", "eval")
 
 
-def plan(model, runtime, repeats, synthetic):
-    """One config per trial, ordered repeat by repeat so a partial sweep stays balanced."""
-    cases = FaultInjector.from_yaml().cases
+def scenario_split(case):
+    split = case.get("split", "dev")
+    if split not in SPLITS:
+        raise ValueError(f"unknown split {split!r} for scenario {case.get('id')}")
+    return split
+
+
+def plan(model, runtime, repeats, synthetic, split="dev"):
+    """One config per trial, ordered repeat by repeat so a partial sweep stays balanced.
+
+    Only scenarios of the requested split run; clean controls run in both splits.
+    """
+    cases = {k: v for k, v in FaultInjector.from_yaml().cases.items() if scenario_split(v) == split}
+    if not cases:
+        raise ValueError(f"no {split} scenarios in {PAYLOADS}")
     configs = []
     for repeat in range(repeats):
         for task in TASKS:
@@ -89,6 +106,8 @@ def main(plan=plan, description=__doc__, smoke_scenario=None, share_initial_pass
     p.add_argument("--scripted", action="store_true", help="B's test client instead of a model (pipeline check)")
     p.add_argument("--api-key-env", default="OPENAI_COMPATIBLE_API_KEY")
     p.add_argument("--profile", type=Path, help="JSON file with the locked settings (keys are option names)")
+    p.add_argument("--split", choices=SPLITS, default="dev",
+                   help="dev: scenarios to build and tune on (default); eval: held-out scenarios, run once after the freeze")
     pre, _ = p.parse_known_args()
     profile = {}
     if pre.profile:
@@ -108,22 +127,27 @@ def main(plan=plan, description=__doc__, smoke_scenario=None, share_initial_pass
 
     model = {"model": a.model or "fixture", "base_url": a.base_url, "plan_format": a.plan_format,
              "temperature": a.temperature, "max_tokens": a.max_tokens, "timeout_seconds": a.request_timeout}
-    configs = plan(model, a.runtime or "scripted-test-client", 1 if a.smoke else a.repeats, a.scripted)
+    try:
+        configs = plan(model, a.runtime or "scripted-test-client", 1 if a.smoke else a.repeats, a.scripted,
+                       split=a.split)
+    except ValueError as exc:
+        p.error(str(exc))
     if a.smoke:
-        first = smoke_scenario or next(
-            c["scenario_id"] for c in configs if c["task_id"] == "user_task_0" and "fault" in c)
+        faulty = [c["scenario_id"] for c in configs if c["task_id"] == "user_task_0" and "fault" in c]
+        first = smoke_scenario if smoke_scenario in faulty else faulty[0]
         configs = [c for c in configs if c["task_id"] == "user_task_0" and c["scenario_id"] in ("clean", first)]
 
     info = {"commit": git("rev-parse", "HEAD"), "dirty": bool(dirty), "python": platform.python_version(),
             "machine": f"{platform.system()} {platform.release()} {platform.machine()}", "host": platform.node(),
-            "argv": sys.argv[1:], "profile": profile, "trials": len(configs), "keys": [key(c) for c in configs]}
+            "argv": sys.argv[1:], "profile": profile, "split": a.split, "trials": len(configs),
+            "keys": [key(c) for c in configs]}
     out = a.output.resolve()
     trials, interrupted = out / "trials", out / "interrupted"
     info_path = out / "run_info.json"
     if info_path.exists():
         old = json.loads(info_path.read_text())
-        same = {k: old.get(k) for k in ("commit", "argv", "profile", "keys")} == \
-            {k: info[k] for k in ("commit", "argv", "profile", "keys")}
+        same = {k: old.get(k, "dev" if k == "split" else None) for k in ("commit", "argv", "profile", "split", "keys")} == \
+            {k: info[k] for k in ("commit", "argv", "profile", "split", "keys")}
         if not same:
             p.error(f"{out} holds a sweep with a different commit or settings; use a new --output")
         info["started"] = old["started"]
