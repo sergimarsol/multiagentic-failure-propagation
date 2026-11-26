@@ -69,8 +69,12 @@ def git(*args):
     return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True).stdout.strip()
 
 
-def main(plan=plan, description=__doc__, smoke_scenario=None):
-    """plan/description/smoke_scenario let the Phase 2 script reuse this resumable sweep loop."""
+def main(plan=plan, description=__doc__, smoke_scenario=None, share_initial_pass=False):
+    """plan/description/smoke_scenario let the Phase 2 script reuse this resumable sweep loop.
+
+    share_initial_pass: recovery methods of one scenario and repeat replay one recorded initial
+    pass, kept in <output>/initial_pass/.
+    """
     p = argparse.ArgumentParser(description=description, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--model", help="model identifier served at --base-url")
@@ -145,7 +149,8 @@ def main(plan=plan, description=__doc__, smoke_scenario=None):
             interrupted.mkdir(parents=True, exist_ok=True)
             shutil.move(str(directory), str(interrupted / f"{key(config)}-{time.strftime('%Y%m%d%H%M%S')}"))
         tick = time.monotonic()
-        row = workflow_batch([config], directory, client_factory=factory, api_key=api_key)[0]
+        row = workflow_batch([config], directory, client_factory=factory, api_key=api_key,
+                             initial_pass_dir=out / "initial_pass" if share_initial_pass else None)[0]
         s = row["summary"]
         print(f"{i}/{len(configs)} {key(config)} strict={s.get('final_strict_success')} "
               f"attack={s.get('attack_success')} error={bool(row['error'])} {time.monotonic() - tick:.0f}s", flush=True)

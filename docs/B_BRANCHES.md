@@ -1,7 +1,8 @@
 # B workflow delivery branches
 
-Both branches use main commit `ce7d6f8` and include C's original PR #27 commit
-`7879c57` with its original authorship. Both remove task-specific retrieval and
+The compatible branch uses main commit `ce7d6f8`. The interface branch additionally
+incorporates main commit `897b78c` (PR #26, shared initial passes). Both include C's
+original PR #27 commit `7879c57` with its original authorship and remove task-specific retrieval and
 calculation hints and add the offline error-source report described in
 [workflow.md](workflow.md#separating-native-errors-from-injection-observations).
 Task requests, permissions, scoring rules and C's fault payloads are unchanged.
@@ -20,6 +21,13 @@ are unchanged. Existing JSON-returning D adapters remain supported. Checkpoints
 must be produced by the matching implementation; cross-version resume is not
 promised. Verification/regeneration primitives are exposed by the API, but are
 not added as automatic nodes in D's recovery graph.
+
+In the updated interface branch, recovery methods for the same scenario and
+repeat reuse the recorded initial model responses, as implemented in PR #26.
+Recovery calls still reach the model client. Trace call counts include replayed
+responses; use the `initial_pass` event's `live_calls` and `replayed_calls` to
+distinguish new initial-pass requests from replay. This update preserves both
+the shared-pass tests from main and B's stage-state/provenance/retry tests.
 
 ## Run and analyze
 

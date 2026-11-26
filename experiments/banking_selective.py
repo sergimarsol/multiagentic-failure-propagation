@@ -241,6 +241,10 @@ def run_banking_phase2(directory, *, task_id, condition, client, session_config=
                 evaluation_id=new_id("evaluation"), scope="attempt", evaluator="D.unavailable")
         return evaluation, _path(label, target, target_attempt, evaluation)
 
+    if hasattr(client, "end_initial_pass"):
+        # Methods of one scenario and repeat replay the same recorded initial pass.
+        rec.log("initial_pass", attempt, data=client.end_initial_pass())
+
     evaluation, first = score("initial", workflow, attempt)
     rec.save_evaluation(evaluation)
     paths, environments = [first], [env]
