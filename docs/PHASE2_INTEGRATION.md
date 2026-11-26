@@ -25,6 +25,12 @@ uv run python scripts/run_phase2_banking.py --profile configs/phase1_final.json 
 uv run python scripts/run_phase2_banking.py --profile configs/phase1_final.json --output runs/phase2
 ```
 
+`--split dev` (default) runs the development scenarios, `--split eval` the held-out ones
+(`split: eval` in `faults/payloads.yaml`; a payload without a tag is dev), once, after the freeze.
+Use a separate `--output` per split. `run_info.json` records it, and the report and packaged README
+title name it, so the two are never mixed (proposal: `docs/phase2_workloads.md`).
+On Windows, keep `--output` short: trial and checkpoint paths are long.
+
 A single trial is `experiments.workflow_bridge.execute_workflow(config, directory)`; add
 `"condition": "selective"` (and optionally `recovery_policy`, `method_id`) to a Phase 1 config.
 

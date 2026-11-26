@@ -24,7 +24,8 @@ def readme(info, model, report, rows, interrupted, judged, where="results/phase2
     planned, done = info.get("keys", []), {r["trial"] for r in rows}
     missing = [k for k in planned if k not in done]
     smoke = "--smoke" in info.get("argv", [])
-    lines = ["# Phase 2 smoke run" if smoke else "# Phase 2 results", ""]
+    split = info.get("split", "dev")
+    lines = [("# Phase 2 smoke run" if smoke else "# Phase 2 results") + f" ({split} split)", ""]
     if smoke:
         lines += ["Pipeline check on the real model: one task, one scenario, one trial per method. "
                   "Not an experimental result.", ""]

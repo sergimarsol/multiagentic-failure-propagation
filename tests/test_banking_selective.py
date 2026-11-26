@@ -362,3 +362,33 @@ def test_shared_initial_pass_goes_live_when_the_request_differs(tmp_path):
     assert len(json.loads(path.read_text())) == 2  # the recording is kept as it was
     two.complete(["a"], [])
     assert two.replayed == 1  # after the initial pass nothing is replayed
+
+
+def test_plan_runs_only_the_requested_split(monkeypatch):
+    from faults.injection_harness import FaultInjector
+    from scripts import run_phase1_final as base
+    from scripts.run_phase2_banking import plan
+    model = {"model": "m", "base_url": "http://127.0.0.1:1/v1"}
+    cases = FaultInjector.from_yaml().cases
+    dev = plan(model, "rt", 1, True)
+    assert {c["scenario_id"] for c in dev} == set(cases) | {"clean"}  # untagged payloads are dev
+    with pytest.raises(ValueError, match="no eval scenarios"):
+        plan(model, "rt", 1, True, "eval")
+    # Tag one scenario eval: it leaves dev and is the only fault scenario in eval.
+    held = "t0_pe_accidental_amount"
+    tagged = {k: {**v, "split": "eval"} if k == held else v for k, v in cases.items()}
+    monkeypatch.setattr(base.FaultInjector, "from_yaml", classmethod(lambda cls: type("F", (), {"cases": tagged})))
+    assert held not in {c["scenario_id"] for c in plan(model, "rt", 1, True)}
+    assert {c["scenario_id"] for c in plan(model, "rt", 1, True, "eval")} == {held, "clean"}
+    with pytest.raises(ValueError, match="unknown split"):
+        base.scenario_split({"id": "x", "split": "test"})
+
+
+def test_report_names_the_split(tmp_path):
+    from scripts.phase2_report import markdown, sweep_split
+    assert sweep_split(tmp_path) is None
+    (tmp_path / "run_info.json").write_text("{}")
+    assert sweep_split(tmp_path) == "dev"  # sweeps from before the split option
+    (tmp_path / "run_info.json").write_text('{"split": "eval"}')
+    assert sweep_split(tmp_path) == "eval"
+    assert markdown([], [], [], False, "eval").startswith("# Phase 2 report (eval split)\n\nEvaluation scenarios")
