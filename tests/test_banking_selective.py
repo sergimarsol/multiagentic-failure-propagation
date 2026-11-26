@@ -311,3 +311,54 @@ def test_restore_mode_requires_the_recovery_engine(tmp_path):
               config("selective", scenario=LATE["user_task_0"], restore_mode="somewhere")):
         with pytest.raises(ValueError):
             execute_workflow(c, tmp_path, client_factory=factory)
+
+
+def test_recovery_methods_share_one_initial_pass(tmp_path):
+    clients = []
+
+    def counting(model):
+        clients.append(factory(model))
+        return clients[-1]
+
+    shared, scenario = tmp_path / "initial_pass", LATE["user_task_0"]
+    runs = {}
+    for name, extra in (("full", dict(recovery_policy={})), ("selective", {}),
+                        ("early", dict(notification_boundary="after_faulty_handoff"))):
+        condition = "full_restart" if name == "full" else "selective"
+        runs[name] = tmp_path / name
+        execute_workflow(config(condition, scenario=scenario, **extra), runs[name],
+                         client_factory=counting, initial_pass_dir=shared)
+    first, second, early = (events(runs[n], "initial_pass")[0]["data"] for n in ("full", "selective", "early"))
+    assert (first["replayed_calls"], first["live_calls"]) == (0, 5)
+    assert (second["replayed_calls"], second["live_calls"], second["diverged"]) == (5, 0, False)
+    # The early notice stops after the planner, so it replays only that part.
+    assert (early["replayed_calls"], early["live_calls"]) == (3, 0)
+    assert len(list(shared.iterdir())) == 1
+    # Only recovery calls reach the model in a replayed trial: plan + execute (3) for selective.
+    assert [len(c.requests) for c in clients] == [10, 3, 3]
+    # Both methods were handed the same faulty plan.
+    plans = [next(e["data"]["context"]["delivered_output"] for e in events(runs[n], "node_result")
+                  if e["node_id"] == "plan" and e["attempt_id"] == "attempt_0") for n in ("full", "selective")]
+    assert plans[0] == plans[1] and "1337.42" in json.dumps(plans[0])
+
+
+def test_shared_initial_pass_goes_live_when_the_request_differs(tmp_path):
+    from experiments.initial_pass import SharedInitialPass
+
+    class Echo:
+        config = None
+        def complete(self, messages, tools, *, json_output=False):
+            return {"reply": messages}
+
+    path = tmp_path / "pass.json"
+    one = SharedInitialPass(Echo(), path)
+    one.complete(["a"], [])
+    one.complete(["b"], [])
+    two = SharedInitialPass(Echo(), path)
+    assert two.complete(["a"], []) == {"reply": ["a"]}
+    assert two.complete(["other"], []) == {"reply": ["other"]}
+    report = two.end_initial_pass()
+    assert (report["replayed_calls"], report["live_calls"], report["diverged"]) == (1, 1, True)
+    assert len(json.loads(path.read_text())) == 2  # the recording is kept as it was
+    two.complete(["a"], [])
+    assert two.replayed == 1  # after the initial pass nothing is replayed

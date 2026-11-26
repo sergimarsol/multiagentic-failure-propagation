@@ -130,7 +130,8 @@ def _injector(config):
     return inject, InjectionSpec(config["scenario_id"], SITES[fault["site"]])
 
 
-def execute_workflow(config, directory, *, client_factory=None, api_key="ollama"):
+def execute_workflow(config, directory, *, client_factory=None, api_key="ollama", initial_pass_dir=None):
+    """initial_pass_dir: recovery-engine trials of one scenario and repeat share one initial pass."""
     c = prepare_config(config)
     model = ModelConfig(**c["workflow"]["model"])
     if c["synthetic"] and client_factory is None:
@@ -142,6 +143,9 @@ def execute_workflow(config, directory, *, client_factory=None, api_key="ollama"
     session_config = WorkflowConfig(**c["workflow"]["session"])
     if uses_recovery_engine(c):
         from .banking_selective import run_banking_phase2
+        if initial_pass_dir is not None:
+            from .initial_pass import SharedInitialPass, group_file
+            client = SharedInitialPass(client, group_file(initial_pass_dir, c))
         return run_banking_phase2(directory, task_id=c["task_id"], condition=c["condition"], client=client,
             session_config=session_config, injector=injector, injection_spec=spec,
             synthetic=c["synthetic"], experiment_config=c)
@@ -154,11 +158,12 @@ def execute_workflow(config, directory, *, client_factory=None, api_key="ollama"
     return result
 
 
-def workflow_batch(configs, output, *, client_factory=None, api_key="ollama"):
+def workflow_batch(configs, output, *, client_factory=None, api_key="ollama", initial_pass_dir=None):
     # Resolve once for grouping; execute rechecks before each trial to reject drift.
     configs = [prepare_config(c) for c in configs]
     def execute(c, directory):
-        return execute_workflow(c, directory, client_factory=client_factory, api_key=api_key)
+        return execute_workflow(c, directory, client_factory=client_factory, api_key=api_key,
+                                initial_pass_dir=initial_pass_dir)
     return run_batch(configs, output, execute)
 
 

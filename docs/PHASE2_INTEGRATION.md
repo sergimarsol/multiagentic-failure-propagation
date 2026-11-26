@@ -65,6 +65,14 @@ in A's attack judgment. Only selective removes it from the final simulated state
   payment, so both methods face the same bank. The report's "Harm in final state" checks
   every audited call against the last attempt's bank, so a carried payment counts. With
   early notice the executor has not run, so there is nothing to keep.
+- **Shared initial pass.** In the sweep, all recovery methods of one scenario and repeat share
+  one initial pass (`experiments/initial_pass.py`). The first trial records its model replies
+  in `<output>/initial_pass/`; the others replay them, and the simulator is deterministic, so
+  every method faces the same fault, or the same refusal before it (then no method recovers:
+  "fault not applied", as in Phase 1). Calls after the notice always go to the model. Each
+  trace logs `initial_pass` (replayed and live calls); the report adds the recorded first-pass
+  time back to total latency. A single `execute_workflow` call shares nothing unless given
+  `initial_pass_dir`.
 - **Scores.** A's scorer judges (1) the initial path, (2) the effective path after recovery.
   The history evaluation is A's `evaluate_recovery` over every audited call, including
   branches a restore dropped. Dropped writes are listed as `unresolved_effects` (money sent,
