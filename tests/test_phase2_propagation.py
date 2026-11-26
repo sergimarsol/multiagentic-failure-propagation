@@ -429,7 +429,8 @@ def test_duplicate_tool_attempt_without_audit_remains_attempted(tmp_path):
     assert result["initial"]["matched_audit_call_ids"] == ["call_bad"]
 
 
-def test_c3_cli_writes_json_csv_and_skips_phase1(tmp_path):
+@pytest.mark.parametrize("runner", ["banking_phase2_v1", "banking_phase2_v2"])
+def test_c3_cli_writes_json_csv_and_skips_phase1(tmp_path, runner):
     """End-to-end through the real CLI without requiring external payloads."""
     root = tmp_path / "dataset"
     root.mkdir()
@@ -441,6 +442,7 @@ def test_c3_cli_writes_json_csv_and_skips_phase1(tmp_path):
     # of Phase 1's full payloads.yaml definitions.
     meta = json.loads((p2 / "manifest.json").read_text())
     meta["experiment"]["scenario_id"] = "clean"
+    meta["runner"] = runner
     (p2 / "manifest.json").write_text(json.dumps(meta))
     p1 = make_trace(root / "phase1", early=True, tool_amount=None)
     manifest = json.loads((p1 / "manifest.json").read_text())
@@ -458,6 +460,18 @@ def test_c3_cli_writes_json_csv_and_skips_phase1(tmp_path):
         rows = list(csv.DictReader(f))
     assert len(results) == len(rows) == 1
     assert results[0]["initial"]["label"] == rows[0]["label"] == "not_applicable"
+
+
+def test_cli_rejects_unknown_runner_version(tmp_path):
+    path = make_trace(tmp_path, include_injection=False)
+    manifest = json.loads((path / "manifest.json").read_text())
+    manifest["runner"] = "banking_phase2_v999"
+    (path / "manifest.json").write_text(json.dumps(manifest))
+    output = tmp_path / "analysis"
+    with pytest.raises(SystemExit) as exc:
+        main(["--run", str(path), "--output", str(output)])
+    assert exc.value.code == 2
+    assert not output.exists()
 
 
 def test_model_pairing_does_not_cross_nodes_with_reused_step_ids():

@@ -10,6 +10,7 @@ from .client import ModelRequestError
 from .contracts import (CONTRACT_VERSION, PLAN_SCHEMA, InjectionGate, WorkflowError, parse_object,
                         validate_content, validate_verdict)
 from .prompts import PROMPTS, RESEARCH_FORMATS
+from .stages import STAGE_ROLES, STAGE_STATE_VERSION, StageResult, StageState
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,105 @@ class BankingWorkflowSession:
         self.model_calls = self.tool_calls = 0
         self.evidence = []
         self._used = False
+
+    def run_stage(self, stage, *, environment, callbacks, request_id, inputs=None,
+                  state=None, feedback=None, generation=0):
+        """Run one whole stage with a fresh dialogue using the Phase 1 stage loop.
+
+        environment is D's BankingAdapter, not a new environment: its audit path
+        and restore semantics must survive. inputs maps upstream names to delivered
+        artifact IDs. A verifier takes {"candidate": id} and the state's evidence.
+        A regeneration takes the same upstream IDs plus rejected-verdict feedback.
+
+        Only successful completed stages return continuation state. On failure the
+        recorder retains calls/effects; the caller must restore a safe checkpoint
+        before retrying in a fresh session. This method never restores the bank,
+        injects a fault, refills the trial budget, or decides a recovery policy.
+        """
+        if self._used:
+            raise WorkflowError("A session is single-use; restart must create a fresh session")
+        self._used = True
+        if not isinstance(stage, str) or stage not in STAGE_ROLES:
+            raise WorkflowError("Unknown workflow stage")
+        role = STAGE_ROLES[stage]
+        if type(generation) is not int or not 0 <= generation <= self.config.verification_retries:
+            raise WorkflowError("Invalid stage generation")
+        if role == "executor" and (generation or feedback is not None):
+            raise WorkflowError("Executor regeneration is not supported")
+        if role == "verifier" and feedback is not None:
+            raise WorkflowError("Verifier receives a candidate, not regeneration feedback")
+        if role in {"researcher", "planner"} and bool(generation) != (feedback is not None):
+            raise WorkflowError("Regeneration requires a generation and rejected-verdict feedback")
+        if state is None and (stage != "research" or generation):
+            raise WorkflowError("Continuation stages require completed-stage state")
+        inputs = {} if inputs is None else dict(inputs)
+        expected = {"research": set(), "plan": {"research"}, "execute": {"plan"},
+                    "verify_research": {"candidate"}, "verify_plan": {"candidate"}}[stage]
+        if set(inputs) != expected:
+            raise WorkflowError(f"{stage} requires input artifacts {sorted(expected)}")
+        self.env, self.bank, self.cb = environment.env, environment, callbacks
+        if environment.recorder is not callbacks.recorder:
+            raise WorkflowError("Stage environment and callbacks must share a recorder")
+        config_hash = fingerprint({
+            "stage_state_version": STAGE_STATE_VERSION, "task_id": self.env.task_id,
+            "request": self.env.prompt, "session": asdict(self.config),
+            "model": self.client.config.public_dict(), "prompts": PROMPTS,
+            "research_format": RESEARCH_FORMATS.get(self.env.task_id, ""),
+            "plan_schema": PLAN_SCHEMA,
+            "permissions": {r: list(self.env.allowed_tools(r)) for r in PROMPTS},
+            "tool_schemas": {r: self.env.tool_schemas(r) for r in PROMPTS},
+        })
+        identity = dict(run_id=callbacks.recorder.run_id, attempt_id=callbacks.attempt_id,
+                        config_hash=config_hash)
+        state = StageState(**identity) if state is None else state
+        if not isinstance(state, StageState):
+            state = StageState.from_dict(state)
+        if any(getattr(state, k) != v for k, v in identity.items()):
+            raise WorkflowError("Stage state belongs to a different run, attempt or configuration")
+        if state.model_calls > self.config.max_model_calls or state.tool_calls > self.config.max_tool_calls:
+            raise WorkflowError("Stage state exceeds session call limits")
+
+        def content(ref):
+            if not isinstance(ref, str) or not ref:
+                raise WorkflowError("Stage inputs must be artifact IDs")
+            artifact = callbacks.recorder.artifact(ref)
+            if artifact["attempt_id"] != callbacks.attempt_id:
+                raise WorkflowError("Stage artifact belongs to a different attempt")
+            return artifact["content"]
+
+        if content(request_id) != {"user_request": self.env.prompt}:
+            raise WorkflowError("Request artifact differs from the environment task")
+        payload = {name: content(ref) for name, ref in inputs.items()}
+        evidence = [content(ref) for ref in state.evidence_ids]
+        if any(not isinstance(item, dict) or set(item) !=
+               {"tool", "args", "result_text", "error", "audit_call_id"} for item in evidence):
+            raise WorkflowError("Stage evidence must reference original tool-result artifacts")
+        refs = [request_id, *inputs.values()]
+        if role == "verifier":
+            boundary = stage.removeprefix("verify_")
+            validate_content(boundary, payload["candidate"])
+            payload.update(boundary=boundary, original_evidence=evidence)
+            refs.extend(state.evidence_ids)
+        elif inputs:
+            name = next(iter(inputs))
+            validate_content(name, payload[name])
+        if feedback is not None:
+            verdict = validate_verdict(content(feedback))
+            if verdict["accepted"]:
+                raise WorkflowError("Regeneration feedback must be a rejected verdict")
+        self.model_calls, self.tool_calls = state.model_calls, state.tool_calls
+        self.evidence = list(state.evidence_ids)
+        output, execution = self._stage(role, stage, payload, refs,
+                                        feedback=feedback, generation=generation)
+        # Feedback is both actual model input and a control dependency of regeneration.
+        controls = (feedback,) if feedback is not None else ()
+        resumed = StageState(**identity, model_calls=self.model_calls, tool_calls=self.tool_calls,
+                             evidence_ids=tuple(self.evidence))
+        return StageResult(stage=stage, role=role, artifact_id=output, execution_id=execution,
+            input_artifact_ids=tuple(refs), control_artifact_ids=controls,
+            messages=detached(self.histories[role]), generation=generation,
+            model_calls=self.model_calls - state.model_calls,
+            tool_calls=self.tool_calls - state.tool_calls, state=resumed)
 
     def run(self, env, callbacks, injector, *, injection_enabled, always_verify):
         if self._used:
@@ -138,6 +238,10 @@ class BankingWorkflowSession:
         self.histories[role].append(messages)
         format_retries = 0
         with self.cb.node(node, inputs=refs) as execution:
+            # Record the control edge before calls, including unsuccessful regeneration.
+            if feedback:
+                DependencyStore(self.cb.recorder).record(self.cb.attempt_id, node, execution,
+                    inputs=list(input_refs), controls=[feedback])
             for turn in range(self.config.max_turns_per_stage):
                 message, response_ref = self._model(role, node, execution, messages, tools, refs, generation, turn, format_retries)
                 messages.append(message)

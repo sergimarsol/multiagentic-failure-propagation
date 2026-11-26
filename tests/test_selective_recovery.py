@@ -10,6 +10,24 @@ from experiments.selective import Node, SelectiveRecoveryCoordinator, SelectiveR
 from experiments.selective_mock import make_workflow, run_selective_mock, toy_evaluate
 
 
+def test_adapter_cannot_claim_a_previous_execution_as_its_output(tmp_path):
+    from experiments.selective import NodeOutput
+
+    rec = Recorder(tmp_path, {"run_id": "trial", "synthetic": True})
+    w = make_workflow(rec)
+    original = w.execute
+
+    def execute(node, inputs, env, context, cb, execution):
+        value = original(node, inputs, env, context, cb, execution)
+        # A source artifact is allowed only when produced inside this execution.
+        return NodeOutput(cb.artifact("foreign_execution", value))
+
+    w.execute = execute
+    with pytest.raises(TraceError, match="current execution"):
+        w.run("a0")
+    assert not [e for e in rec.records("events") if e["event_type"] == "node_result"]
+
+
 def prepared(path, scenario="late", nodes=None):
     rec = Recorder(path, {"run_id": "trial", "synthetic": True})
     rec.segment_id = "initial"

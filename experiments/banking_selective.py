@@ -21,13 +21,12 @@ from .models import Evaluation, detached, fingerprint, new_id
 from .protocol import Budget, Limits, normalize_recovery_policy, provenance, validate_config
 from .recorder import Recorder
 from .recovery import FaultNotice
-from .selective import DagWorkflow, Node, RetryableNodeError, SelectiveRecoveryCoordinator
+from .selective import DagWorkflow, Node, NodeOutput, RetryableNodeError, SelectiveRecoveryCoordinator
 
-RUNNER_VERSION = "banking_phase2_v1"
+RUNNER_VERSION = "banking_phase2_v2"
 RESTORE_MODES = ("simulated", "real_bank")
 BANK_KEYS = ("balance", "iban", "transactions", "scheduled_transactions", "files", "user_account")
 AUDIT_PATH = "_d_audit_path"
-ROLES = {"research": "researcher", "plan": "planner", "execute": "executor"}
 # Whole-environment granularity, matching BankingAdapter's per-call dependency records.
 # Every stage may append to the audit path: a denied or hallucinated call is still audited.
 NODES = (
@@ -66,30 +65,26 @@ def make_banking_workflow(recorder, task_id, client, session_config=None, *, inj
 
     def execute(node, inputs, environment, context, callbacks, execution):
         workflow = holder["workflow"]
-        role = ROLES[node.name]
         # One single-use B session per stage execution: no model history crosses stages or reruns.
         session = BankingWorkflowSession(client, session_config)
-        session.env, session.bank = environment.env, environment
-        session.cb = _StageCallbacks(callbacks, execution, workflow.faulty_ids)
-        # Session limits stay per workflow pass, as in Phase 1: completed stages count.
-        done = workflow.state["contexts"].values()
-        used_model = sum(c.get("model_calls", 0) for c in done)
-        used_tool = sum(c.get("tool_calls", 0) for c in done)
-        session.model_calls, session.tool_calls = used_model, used_tool
+        # The last completed stage carries cumulative path counts and original evidence.
+        # D's recorder/budget separately retains costs from every abandoned branch.
+        completed = workflow.state["completed_nodes"]
+        state = workflow.state["contexts"][completed[-1]]["resume_state"] if completed else None
         request = callbacks.artifact(execution, {"user_request": env.prompt})
-        refs = [request, *[workflow.state["artifact_map"][name] for name in node.inputs]]
         try:
-            output, _ = session._stage(role, node.name, dict(inputs), refs)
+            result = session.run_stage(node.name, environment=environment,
+                callbacks=_StageCallbacks(callbacks, execution, workflow.faulty_ids),
+                request_id=request, inputs={name: workflow.state["artifact_map"][name] for name in node.inputs},
+                state=state)
         except ModelRequestError as exc:
             # The request has terminated and A's simulator reports every effect, so a
             # provider-declared transient failure may be retried from a checkpoint.
             if exc.retryable:
                 raise RetryableNodeError(f"{node.name}: {exc}") from exc
             raise
-        context.update(role=role, messages=detached(session.histories[role]),
-                       model_calls=session.model_calls - used_model,
-                       tool_calls=session.tool_calls - used_tool, stage_artifact_id=output)
-        return callbacks.content(output)
+        context.update(result.to_context())
+        return NodeOutput(result.artifact_id)
 
     gate = InjectionGate(injector, injection_spec) if injector is not None else None
     workflow = DagWorkflow(recorder, bank, list(NODES), execute,

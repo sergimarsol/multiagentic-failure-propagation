@@ -31,6 +31,16 @@ class Node:
     effects_restorable: bool = True
 
 
+@dataclass(frozen=True)
+class NodeOutput:
+    """Optional output already recorded by an adapter inside this node execution.
+
+    The outer DAG artifact depends on this source, preserving the adapter's actual
+    model/tool lineage. Plain JSON returns remain supported for other adapters.
+    """
+    artifact_id: str
+
+
 def order_nodes(nodes):
     table = {n.name: n for n in nodes}
     if len(table) != len(nodes):
@@ -49,7 +59,7 @@ class DagWorkflow:
     """Optional advanced B adapter; Phase 1 sessions need not subclass this.
 
     execute(node, inputs, environment, node_context, callbacks, execution_id)
-    returns JSON. Mutable model histories must live ONLY in node_context. Each
+    returns JSON or NodeOutput. Mutable model histories must live ONLY in node_context. Each
     node executes at most once per segment, using a fresh node context. Hidden
     shared mutable caches are outside this adapter contract.
     """
@@ -113,13 +123,20 @@ class DagWorkflow:
             try:
                 content = self.execute(node, {k: cb.content(v) for k, v in refs.items()},
                                        self.environment, context, cb, execution)
+                output_inputs = list(all_inputs)
+                if isinstance(content, NodeOutput):
+                    source = self.recorder.artifact(content.artifact_id)
+                    if source["attempt_id"] != attempt or source["producer_execution_id"] != execution:
+                        raise TraceError("node output must belong to the current execution")
+                    output_inputs.append(content.artifact_id)
+                    content = source["content"]
                 after = detached(self.environment.snapshot())
                 if set(after) != set(before):
                     raise TraceError("resource inventory changes are unsupported")
                 changed = [k for k in before if before[k] != after[k]]
                 if not set(changed) <= set(node.writes):
                     raise TraceError("undeclared state write")
-                original = cb.artifact(execution, content, all_inputs)
+                original = cb.artifact(execution, content, output_inputs)
                 ref = original
                 if node.name == self.fault_node:
                     ref = cb.inject(original, execution, self.injector, site=node.name,
@@ -132,6 +149,8 @@ class DagWorkflow:
                     writes[key] = {"before": detached(old), "after": detached(new)}
                     self.state["resources"][key] = new
                 # Context for an injected output must reflect what is actually delivered.
+                context["produced_artifact_id"] = original
+                context["delivered_artifact_id"] = ref
                 context["delivered_output"] = cb.content(ref)
                 self._done(node, ref, context)
                 self.recorder.log("node_result", attempt, node_id=node.name, node_execution_id=execution,
